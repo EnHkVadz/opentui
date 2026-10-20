@@ -1148,11 +1148,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   private exitHandler = ((signal?: NodeJS.Signals) => {
-    if (this._isDestroyed) {
+    if (this._isDestroyed && signal) {
       // The hook outlives destroy() until raw mode is off; the signal still ends the process.
       this.leaveRawMode()
       this.removeExitListeners()
-      if (signal && process.listenerCount(signal) === 0) process.kill(process.pid, signal)
+      if (process.listenerCount(signal) === 0) process.kill(process.pid, signal)
       return
     }
     this.destroy()

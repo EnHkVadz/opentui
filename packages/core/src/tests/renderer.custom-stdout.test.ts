@@ -1967,7 +1967,9 @@ const rawModeActions: Record<string, (renderer: CliRenderer) => Promise<unknown>
   "failing resume": (renderer) => renderer.resume().catch(() => {}),
   "resume after destroy": (renderer) => (renderer.destroy(), renderer.closed.then(() => renderer.resume())),
   // The signal ends the process, so raw mode goes off before restoration.
-  "signal after destroy": (renderer) => (renderer.destroy(), process.emit("SIGHUP"), renderer.closed),
+  "signal after destroy": (renderer) => (renderer.destroy(), process.emit("SIGHUP", "SIGHUP"), renderer.closed),
+  // The first Ctrl+C destroys; the second reaches the signal hook without a signal.
+  "two Ctrl+C presses": (renderer) => (renderer.stdin.push("\x03\x03"), renderer.closed),
 }
 test.each<{ action: string; sync: string[]; settled: string[] }>([
   { action: "destroy", sync: [], settled: ["off after mouse bytes after close"] },
@@ -1977,6 +1979,7 @@ test.each<{ action: string; sync: string[]; settled: string[] }>([
   { action: "failing resume", sync: [], settled: [] },
   { action: "resume after destroy", sync: [], settled: ["off after close"] },
   { action: "signal after destroy", sync: ["off"], settled: ["off", "off after mouse bytes after close"] },
+  { action: "two Ctrl+C presses", sync: [], settled: ["off after mouse bytes after close"] },
 ])("$action switches raw mode on the far side of the mouse mode bytes", async ({ action, sync, settled }) => {
   const stdin = createTestStdin()
   const stdout = createCollectingStdout(80, 24)
