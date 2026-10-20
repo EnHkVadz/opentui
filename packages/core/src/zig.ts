@@ -1016,44 +1016,22 @@ let globalTraceSymbols: Record<string, number[]> | null = null
 let globalFFILogPath: string | null = null
 let exitHandlerRegistered = false
 
-const nativeFrameWorkFields = {
-  workFrameId: "work_frame_id",
-  candidateVisits: "candidate_visits",
-  paintVisits: "paint_visits",
-  viewPreparations: "view_preparations",
-  geometryReads: "geometry_reads",
-  yogaSolves: "yoga_solves",
-  feedbackOperations: "feedback_operations",
-  visibilitySteps: "visibility_steps",
-  viewportChildRefreshes: "viewport_child_refreshes",
-  overlapTests: "overlap_tests",
-  membersPainted: "members_painted",
-  memberCells: "member_cells",
-  cellsCleared: "cells_cleared",
-  hitCellsWritten: "hit_cells_written",
-  hitCellsCleared: "hit_cells_cleared",
-  hitCellsCompared: "hit_cells_compared",
-  rowsCompared: "rows_compared",
-  rowsDiffed: "rows_diffed",
-  fullPathReasons: "full_path_reasons",
-  hostRequests: "host_requests",
-  layoutRounds: "layout_rounds",
-} as const satisfies Record<keyof NativeFrameWork, keyof (typeof nativeLayouts)["ot_scene_stats"]["fields"]>
-
+/** Reads the `ot_scene_stats` fields from `work_frame_id` up to `reserved`, camel-casing their names. */
 function readFrameWork(
   layout: (typeof nativeLayouts)["ot_scene_stats"],
   output: BigUint64Array,
   words: Uint32Array,
 ): NativeFrameWork {
-  const result = {} as NativeFrameWork
-  for (const [name, field] of Object.entries(nativeFrameWorkFields) as [
-    keyof NativeFrameWork,
-    keyof typeof layout.fields,
-  ][]) {
-    const { offset, type } = layout.fields[field]
+  const result: Record<string, number> = {}
+  let counting = false
+  for (const [field, { offset, type }] of Object.entries(layout.fields)) {
+    if (field === "reserved") break
+    counting ||= field === "work_frame_id"
+    if (!counting) continue
+    const name = field.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase())
     result[name] = type === "u64" ? toNumber(output[offset / 8]) : words[offset / 4]
   }
-  return result
+  return result as NativeFrameWork
 }
 
 function toNumber(value: number | bigint): number {
@@ -7831,6 +7809,7 @@ export class FFIRenderLib {
     return output[0]
   }
 
+  /** @internal Tests set this through `createTestRenderer({ nativeSceneFullFrame })`. */
   public sceneSetDebugFlags(context: NativeContextHandle, session: SessionHandle, flags: number): void {
     const handle = encodeContextHandle(context, session)
     const value = toSafeFFIU32Length(flags, "Scene debug flags")
