@@ -1160,6 +1160,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     if (!this.nativeSession || this.nativeSession.disposed) return
     const restored = this.nativeSession.restoreOnExit()
     try {
+      this.leaveRawMode()
       this.destroy()
       if (this.flushTerminalInputOnClose) this.lib.terminalFlushInput()
     } finally {
@@ -1286,6 +1287,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
         .finally(() => this.nativeDestroyWait!.promise)
         .finally(() => {
           if (this.nativeSession.error && !this.nativeSession.disposed) this.nativeSession.dispose()
+          this.leaveRawMode()
           if (this.flushTerminalInputOnClose) this.lib.terminalFlushInput()
           this.releaseStreamLease()
         })
@@ -4411,7 +4413,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     } else {
       nativeTransition = this.nativeSession.suspend()
     }
-    nativeTransition = this.trackNativeTerminalTransition(nativeTransition)
+    // Destroy leaves raw mode after its own restoration; an interrupted suspend wrote none.
+    nativeTransition = this.trackNativeTerminalTransition(
+      nativeTransition.finally(() => this._isDestroyed || this.leaveRawMode()),
+    )
     if (this._controlState !== RendererControlState.EXPLICIT_SUSPENDED) {
       // A failed native split drain leaves the host suspended until the caller retries.
       this._previousControlState = this._controlState
@@ -4440,11 +4445,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.stopTerminalKeepAlive()
 
     this.themeModeState?.cancelRefresh()
-
-    if (this.stdin.setRawMode) {
-      this.stdin.setRawMode(false)
-    }
-
     this.stdin.pause()
     return nativeTransition
   }
@@ -4477,14 +4477,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       }
     })
     void resumed.catch(() => {})
+    // The Session writes the bytes that turn mouse reports back on in a later turn, after raw mode is on.
+    this.stdin.setRawMode?.(true)
     return resumed
   }
 
   private finishResume(): void {
-    if (this.stdin.setRawMode) {
-      this.stdin.setRawMode(true)
-    }
-
     let drained: Buffer | string | null
     while ((drained = this.stdin.read()) !== null) this.stdinListener(drained)
     if (this.stdinParser?.hasPendingPixelResolutionResponse()) this.stdinParser.pausePendingTimeout()
@@ -4635,13 +4633,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this.removeCleanupListener(this.stdin, "data", this.stdinListener)
     this.stopTerminalKeepAlive()
-    if (this.stdin.setRawMode) {
-      try {
-        this.stdin.setRawMode(false)
-      } catch (e) {
-        console.error("Error disabling raw mode during destroy:", e)
-      }
-    }
     try {
       this.stdin.pause()
     } catch (e) {
@@ -4748,6 +4739,15 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     // Resolve any pending idle() calls
     this.nativeDestroyWait?.resolve()
     this.resolveIdleIfNeeded()
+  }
+
+  // Leave raw mode only after restoration stops mouse reports, so a cooked tty cannot echo them.
+  private leaveRawMode(): void {
+    try {
+      this.stdin.setRawMode?.(false)
+    } catch (e) {
+      console.error("Error disabling raw mode:", e)
+    }
   }
 
   private releaseStreamLease(): void {

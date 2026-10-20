@@ -1955,6 +1955,46 @@ test("Session teardown after successful setup releases listeners without closing
 
 // ---- Destroy resilience ----
 
+// A cooked tty echoes mouse reports, so raw mode must cover every byte that turns mouse tracking on or off.
+const rawModeActions: Record<string, (renderer: CliRenderer) => Promise<void>> = {
+  destroy: (renderer) => (renderer.destroy(), renderer.closed),
+  suspend: (renderer) => renderer.suspend(),
+  resume: (renderer) => renderer.resume(),
+  "suspend, then destroy": (renderer) => (renderer.suspend().catch(() => {}), renderer.destroy(), renderer.closed),
+}
+test.each([
+  { action: "destroy", held: false },
+  { action: "destroy", held: true },
+  { action: "suspend", held: false },
+  { action: "suspend", held: true },
+  { action: "resume", held: false },
+  { action: "suspend, then destroy", held: false },
+])("$action switches raw mode on the far side of the mouse mode bytes (held sink: $held)", async ({ action, held }) => {
+  const stdin = createTestStdin()
+  const stdout = createCollectingStdout(80, 24)
+  const rawMode: [boolean, boolean][] = []
+  stdin.setRawMode = (enabled) => {
+    rawMode.push([enabled, stdout.text().includes(enabled ? "\x1b[?1000h" : "\x1b[?1000l")])
+    return stdin
+  }
+  const renderer = await createCliRenderer({ stdin, stdout, exitSignals: [] })
+  if (action === "resume") await renderer.suspend()
+  stdout.clear()
+  rawMode.length = 0
+  if (held) {
+    stdout.hold()
+    renderer.root.add(new TextRenderable(renderer, { content: "x" }))
+    await settleUntil(() => stdout.pendingWrite)
+  }
+  const done = rawModeActions[action]!(renderer)
+  await settle(4)
+  stdout.release()
+  await done
+  renderer.destroy()
+  await renderer.closed
+  expect(rawMode[0]).toEqual(action === "resume" ? [true, false] : [false, true])
+})
+
 test("constructor cleans up listeners when input setup fails", async () => {
   const stdin = createTestStdin()
   const stdout = createCollectingStdout(80, 24)
