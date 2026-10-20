@@ -176,8 +176,28 @@ function assertChunkInvariant(input: Uint8Array, opts?: StdinParserOptions) {
 // Conformance vectors for the native parser port (issue 044); the JSON file's `format` field defines them.
 // `bun test --todo src/lib/stdin-parser.test.ts` also runs the todo rows: a todo row that passes fails that run,
 // so remove its issue id once the port fixes it.
-type ConformanceRow = [name: string, steps: Array<string | number[] | null>, expected: string[], issue?: string]
+type ConformanceContext = { kitty?: boolean; pending?: string[] }
+type ConformanceRow = [
+  name: string,
+  steps: Array<string | number[] | null>,
+  expected: string[],
+  issue?: string | null,
+  context?: ConformanceContext,
+]
 const CONFORMANCE = conformance.rows as ConformanceRow[]
+// The renderer's explicit-width CPR is pending for its whole start-up window; the split-footer start-up CPR
+// (startupCursorCprActive) is pending only inside it, so "cpr" stands for the first.
+const PENDING_QUERY = { cpr: "explicitWidthCprActive", pixel: "pixelResolutionQueryActive" } as const
+
+function conformanceContext({ kitty = false, pending = [] }: ConformanceContext = {}): StdinParserOptions {
+  const protocolContext: StdinParserOptions["protocolContext"] & {} = { kittyKeyboardEnabled: kitty }
+  for (const query of pending) {
+    const field = PENDING_QUERY[query as keyof typeof PENDING_QUERY]
+    if (!field) throw new Error(`unknown pending query in conformance context: ${query}`)
+    protocolContext[field] = true
+  }
+  return { protocolContext }
+}
 
 function notation(event: Snap): string {
   switch (event.type) {
@@ -195,8 +215,8 @@ function notation(event: Snap): string {
   }
 }
 
-function runConformance(steps: ConformanceRow[1]): string[] {
-  const { parser, clock } = createTimedParser()
+function runConformance(steps: ConformanceRow[1], options: StdinParserOptions): string[] {
+  const { parser, clock } = createTimedParser(options)
   const out: string[] = []
   try {
     for (const step of [...steps, null]) {
@@ -2544,11 +2564,12 @@ describe("StdinParser", () => {
   })
 
   describe("conformance vectors", () => {
-    for (const [name, steps, expected, issue] of CONFORMANCE) {
+    for (const [name, steps, expected, issue, context] of CONFORMANCE) {
       const bytewise = steps.flatMap((step) => (step === null ? [null] : Array.from(buf(step), (byte) => [byte])))
+      const options = conformanceContext(context)
       const run = () => {
-        expect(runConformance(steps)).toEqual(expected)
-        expect(runConformance(bytewise)).toEqual(expected)
+        expect(runConformance(steps, options)).toEqual(expected)
+        expect(runConformance(bytewise, options)).toEqual(expected)
       }
       if (issue) test.todo(`${name} (${issue})`, run)
       else test(name, run)

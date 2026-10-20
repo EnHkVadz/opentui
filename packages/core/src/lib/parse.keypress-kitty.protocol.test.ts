@@ -321,11 +321,8 @@ describe("Kitty protocol: enhanced letter aliases", () => {
 
 describe("Kitty protocol: canonical CSI letter forms", () => {
   defineKeyCases(canonicalLetterAliasCases)
-
-  test("CSI R is not a canonical F3 alias in the current spec", () => {
-    expect(parseKeypress("\x1b[R", options)?.name).not.toBe("f3")
-    expect(parseKeypress("\x1b[1;2R", options)?.name).not.toBe("f3")
-  })
+  // CSI R and CSI 1;n R are F3 only in legacy mode (196, 197). parseKeypress has no negotiated mode, so the
+  // "Kitty mode" rows in stdin-parser.conformance.json pin that they stay replies with the Kitty protocol on.
 })
 
 describe("Kitty protocol: enhanced tilde aliases", () => {
