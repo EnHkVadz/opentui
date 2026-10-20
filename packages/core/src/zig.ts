@@ -7831,6 +7831,13 @@ export class FFIRenderLib {
     return output[0]
   }
 
+  public sceneSetDebugFlags(context: NativeContextHandle, session: SessionHandle, flags: number): void {
+    const handle = encodeContextHandle(context, session)
+    const value = toSafeFFIU32Length(flags, "Scene debug flags")
+    const pointer = this.nativeContextPointer(context, "ot_scene_set_debug_flags")
+    nativeResult("ot_scene_set_debug_flags", this.opentui.symbols.ot_scene_set_debug_flags(pointer, handle, value))
+  }
+
   public sceneGetStats(context: NativeContextHandle, session: SessionHandle): NativeRenderStats {
     const layout = nativeLayouts.ot_scene_stats
     const handle = encodeContextHandle(context, session)

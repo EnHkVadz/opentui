@@ -103,6 +103,21 @@ describe("native renderer stats", () => {
     expect(renderer.getNativeStats().frameWork).toEqual({ ...steady, workFrameId: 2, rowsCompared: 2 })
     expect(renderer.getStats().frameWork).toEqual(renderer.getNativeStats().frameWork)
   })
+
+  test("nativeSceneFullFrame makes unchanged frames prepare every node", async () => {
+    const result = await createTestRenderer({ width: 4, height: 2, nativeSceneFullFrame: true })
+    renderer = result.renderer
+    renderer.root.add(new TextRenderable(renderer, { content: "abc", width: 3, height: 1 }))
+    await result.renderOnce()
+    await result.renderOnce()
+    const { candidateVisits, geometryReads, rowsCompared, fullPathReasons } = renderer.getNativeStats().frameWork
+    expect({ candidateVisits, geometryReads, rowsCompared, fullPathReasons }).toEqual({
+      candidateVisits: 2,
+      geometryReads: 0,
+      rowsCompared: 2,
+      fullPathReasons: 1,
+    })
+  })
 })
 
 describe("test renderer native render stats", () => {

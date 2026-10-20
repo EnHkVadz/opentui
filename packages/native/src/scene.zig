@@ -360,6 +360,8 @@ pub const Scene = struct {
     preparation_dirty: bool = true,
     // The active attempt's work; it moves into the DONE draft and dies with a cancelled attempt.
     frame_work: renderer.FrameWork = .{},
+    // OT_SCENE_DEBUG_* bits. FULL_FRAME disables every shortcut so frames take today's full path.
+    debug_flags: u32 = 0,
     test_sort_steps: if (builtin.is_test) u64 else void = if (builtin.is_test) 0 else {},
 
     pub fn init(allocator: std.mem.Allocator, config: *yoga.Config, session: handles.Handle) !*Scene {
@@ -696,6 +698,10 @@ pub const Scene = struct {
         return self.paint_slots.items;
     }
 
+    fn forcesFullFrame(self: *const Scene) bool {
+        return self.debug_flags & api.OT_SCENE_DEBUG_FULL_FRAME != 0;
+    }
+
     pub fn requalifyPainted(self: *Scene, cli: *renderer.CliRenderer) void {
         if (self.painted) |*painted| painted.destination = BufferIdentity.init(cli.getNextBuffer());
     }
@@ -732,7 +738,10 @@ pub const Scene = struct {
                 .frame_id = frame_id,
                 .options = options,
             };
-            self.frame_work = .{ .work_frame_id = frame_id };
+            self.frame_work = .{
+                .work_frame_id = frame_id,
+                .full_path_reasons = if (self.forcesFullFrame()) renderer.FrameWork.full_path_forced else 0,
+            };
             self.last_frame_id = frame_id;
         }
         errdefer {
@@ -741,7 +750,7 @@ pub const Scene = struct {
         }
         defer if (self.attempt != null) self.work.clearRetainingCapacity();
         const active = &self.attempt.?;
-        const reusable_work = active.request_id == 0 and self.hook_count == 0 and self.filter_count == 0;
+        const reusable_work = active.request_id == 0 and self.hook_count == 0 and self.filter_count == 0 and !self.forcesFullFrame();
         const root = if (active.root.context_id != 0) blk: {
             const value = objects.get(active.root, .native_renderable, native.NativeRenderable) catch return error.StaleFrame;
             if (self.root != value or value.scene_node == null or value.scene_node.?.owner != self) return error.StaleFrame;

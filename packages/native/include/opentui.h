@@ -848,6 +848,14 @@ ot_status ot_scene_get_layout(ot_context *, const ot_handle *node, uint32_t obse
 ot_status ot_scene_paint(ot_context *, const ot_handle *session, const uint16_t background[4], uint32_t use_mouse, uint32_t excluded_hit_num, ot_scene_frame_request *out_frame);
 ot_status ot_scene_hit_test(ot_context *, const ot_handle *session, int32_t x, int32_t y, uint32_t *out_num);
 ot_status ot_scene_get_stats(ot_context *, const ot_handle *session, ot_scene_stats *out_stats);
+#define OT_SCENE_DEBUG_FULL_FRAME UINT32_C(1)
+/* Diagnostic switches for tests. FULL_FRAME makes every frame take the full
+ * path: no work is reused between frames. Output is unchanged; only the work
+ * counts in ot_scene_stats differ, and frames report OT_SCENE_FULL_PATH_FORCED.
+ * Other bits return OT_INVALID_ARGUMENT, a Session without a scene root
+ * OT_INVALID_PHASE, and an active frame attempt, draft, or frame lease
+ * OT_FRAME_BUSY. Rejection keeps the flags. Flags persist for the Session. */
+ot_status ot_scene_set_debug_flags(ot_context *, const ot_handle *session, uint32_t flags);
 /* Copied renderer cursor state. Style: block=0 line=1 underline=2 default=3.
  * Colors use normalized float channels. Output requires exact size/version. */
 ot_status ot_scene_get_cursor_state(ot_context *, const ot_handle *session, ot_scene_cursor_state *out_state);

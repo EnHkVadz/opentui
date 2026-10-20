@@ -2361,6 +2361,15 @@ pub fn ot_scene_get_stats(context: ?*ContextHandle, session_ptr: ?*const c.ot_ha
     return c.OT_OK;
 }
 
+pub fn ot_scene_set_debug_flags(context: ?*ContextHandle, session_ptr: ?*const c.ot_handle, flags: u32) callconv(.c) c.ot_status {
+    const status = sessionContextStatus(context);
+    if (status != c.OT_OK) return status;
+    const owner = context.?;
+    const id = session_ptr orelse return sessionError(owner, error.InvalidOptions);
+    owner.core.sceneSetDebugFlags(handleFromC(id.*), flags) catch |err| return sessionError(owner, err);
+    return c.OT_OK;
+}
+
 pub fn ot_scene_get_cursor_state(context: ?*ContextHandle, session_ptr: ?*const c.ot_handle, out_ptr: ?*c.ot_scene_cursor_state) callconv(.c) c.ot_status {
     const status = sessionContextStatus(context);
     if (status != c.OT_OK) return status;
@@ -4002,6 +4011,15 @@ test "Scene ABI records preserve rejected outputs and read real Session metadata
     // Painted drafts publish no work; only presented scene frames do.
     try std.testing.expectEqual(@as(u64, 0), stats.work_frame_id);
     try std.testing.expectEqual(@as(u32, 0), stats.reserved);
+    try std.testing.expectEqual(c.OT_INVALID_ARGUMENT, ot_scene_set_debug_flags(handle, &session_c, 2));
+    try std.testing.expectEqual(c.OT_FRAME_BUSY, ot_scene_set_debug_flags(handle, &session_c, c.OT_SCENE_DEBUG_FULL_FRAME));
+    try std.testing.expectEqual(c.OT_OK, ot_scene_frame_cancel(handle, &session_c, frame.frame_id));
+    try std.testing.expectEqual(c.OT_OK, ot_scene_set_debug_flags(handle, &session_c, c.OT_SCENE_DEBUG_FULL_FRAME));
+    try std.testing.expectEqual(c.OT_OK, ot_scene_paint(handle, &session_c, &.{ 0, 0, 0, 255 }, 0, 0, &frame));
+    const unattached = try owner.core.createSession(.{});
+    var unattached_c = handleToC(unattached);
+    try std.testing.expectEqual(c.OT_INVALID_PHASE, ot_scene_set_debug_flags(handle, &unattached_c, 0));
+    try owner.core.cancelSession(unattached);
     const layout_before_overflow = layout;
     try owner.core.sceneSetPaint(handleFromC(root), .{ .translateX = std.math.floatMax(f64) });
     try owner.core.sceneSetPaint(handleFromC(box), .{ .translateX = std.math.floatMax(f64) });

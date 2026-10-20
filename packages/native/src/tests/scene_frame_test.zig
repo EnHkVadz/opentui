@@ -434,6 +434,34 @@ test "Scene frame work counts each frame kind and publishes only presented scene
     try testing.expectEqual(@as(u32, 1), (try work(f)).host_requests);
 }
 
+test "Scene frame full-frame debug flag disables work reuse between frames only" {
+    const f = try Fixture.init(testing.allocator, 8, 2, .{});
+    defer f.deinit();
+    const text = try f.owner.sceneCreateNode(f.id, 2, 2);
+    try f.owner.sceneSetText(text, "hi");
+    try f.owner.sceneMoveNode(text, f.root, 0);
+    _ = try presentWork(f);
+    try testing.expectEqual(@as(u64, 0), (try presentWork(f)).candidate_visits);
+    try testing.expectError(error.InvalidOptions, f.owner.sceneSetDebugFlags(f.id, 2));
+    const draft = try f.owner.scenePaint(f.id, options.background, true, 0);
+    try testing.expectError(error.FrameBusy, f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME));
+    try f.owner.sceneFrameCancel(f.id, draft.frame_id);
+    try testing.expectEqual(@as(u32, 0), f.state.debug_flags);
+    // Forced unchanged frames prepare every node; the first default frame after them has nothing to reuse.
+    try f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME);
+    for (0..2) |_| {
+        const forced = try presentWork(f);
+        try testing.expectEqual(@as(u64, 2), forced.candidate_visits);
+        try testing.expectEqual(FrameWork.full_path_forced, forced.full_path_reasons);
+    }
+    try f.owner.sceneSetDebugFlags(f.id, 0);
+    for ([_]u64{ 2, 0 }) |visits| {
+        const reused = try presentWork(f);
+        try testing.expectEqual(visits, reused.candidate_visits);
+        try testing.expectEqual(@as(u32, 0), reused.full_path_reasons);
+    }
+}
+
 test "Scene frame work counts viewport refresh and culling work" {
     const f = try Fixture.init(testing.allocator, 8, 4, .{});
     defer f.deinit();

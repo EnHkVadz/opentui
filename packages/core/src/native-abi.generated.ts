@@ -1,7 +1,7 @@
 // Generated from packages/native/include/opentui.h and scripts/native-abi-pointers.ts.
 // Run `bun run generate:abi` in packages/core. Do not edit.
 // Inspect audit input: bun scripts/native-abi.ts --audit
-// ABI audit SHA-256: e197ab775daafcfa5f6e1aa2ba6199e587ada6551348ab48291ea2898865851c
+// ABI audit SHA-256: 3fe58686c1b6ea26480a4b62e6b7dcb9f24842b1bdadf1269eb19d2374e9dcc2
 
 export const nativeSymbols = {
   ot_scene_set_hooks: { args: ["ptr", "buffer", "buffer"], returns: "i32" },
@@ -41,6 +41,7 @@ export const nativeSymbols = {
   ot_scene_paint: { args: ["ptr", "buffer", "buffer", "u32", "u32", "buffer"], returns: "i32" },
   ot_scene_hit_test: { args: ["ptr", "buffer", "i32", "i32", "buffer"], returns: "i32" },
   ot_scene_get_stats: { args: ["ptr", "buffer", "buffer"], returns: "i32" },
+  ot_scene_set_debug_flags: { args: ["ptr", "buffer", "u32"], returns: "i32" },
   ot_scene_get_cursor_state: { args: ["ptr", "buffer", "buffer"], returns: "i32" },
   ot_scene_frame_copy_buffer: { args: ["ptr", "buffer", "buffer", "buffer"], returns: "i32" },
   ot_scene_measure_layout: { args: ["ptr", "buffer", "buffer"], returns: "i32" },
@@ -1631,6 +1632,7 @@ export const nativeConstants = {
   OT_SCENE_PROPERTY_RESET_BORDER_CHARACTERS: 4096,
   OT_SCENE_PROPERTY_RECORD_MAX: 88,
   OT_SCENE_PROPERTY_BYTES_MAX: 360448,
+  OT_SCENE_DEBUG_FULL_FRAME: 1,
   OT_SESSION_OPEN: 0,
   OT_SESSION_CLOSING: 1,
   OT_SESSION_CLOSED_STATE: 2,
