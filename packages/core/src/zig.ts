@@ -1306,7 +1306,7 @@ function encodeDrawColors(
   return background !== undefined
 }
 
-const DIAGNOSTIC_QUEUE_MAX = 64 // Version 1 C Contexts hold at most 64 diagnostic records.
+const DIAGNOSTIC_QUEUE_MAX = 64 // Version 2 C Contexts hold at most 64 diagnostic records.
 const DIAGNOSTIC_BATCH = 8 // Eight 4 KiB records keep the cached drain storage near 33 KB.
 
 function createDiagnosticDrainRecord() {

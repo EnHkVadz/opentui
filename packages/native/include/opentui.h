@@ -7,11 +7,11 @@
 extern "C" {
 #endif
 
-/* Experimental context and session ABI, version 1. This header does not stabilize the
+/* Experimental context and session ABI, version 2. This header does not stabilize the
  * library's legacy renderer, Yoga, or other FFI exports. Use matching headers
  * and artifacts. The restricted scene surface supports roots, boxes, plain text,
  * sliders, standard arrows, editor views, and images. */
-#define OT_CONTEXT_ABI_VERSION UINT32_C(1)
+#define OT_CONTEXT_ABI_VERSION UINT32_C(2)
 
 typedef int32_t ot_status;
 #define OT_OK INT32_C(0)
@@ -2104,7 +2104,7 @@ typedef struct ot_session_pump_result {
 } ot_session_pump_result;
 
 /* Zero-initialize, then set struct_size to sizeof(ot_context_options) and
- * abi_version to OT_CONTEXT_ABI_VERSION. Version 1 requires the exact size,
+ * abi_version to OT_CONTEXT_ABI_VERSION. Version 2 requires the exact size,
  * zero flags, zero reserved fields, and positive resource limits.
  * object_capacity is the initial count of native object slots, not bytes. A full
  * table doubles, up to 4194304 slots or object_capacity, whichever is larger;
@@ -2182,7 +2182,7 @@ ot_status ot_context_destroy(ot_context *context);
 ot_status ot_context_get_last_error(ot_context *context, ot_context_error *out_error);
 
 /* Copy up to capacity records in arrival order without allocation or callbacks.
- * Version 1 C contexts hold at most 64 records and drop newest on overflow.
+ * Version 2 C contexts hold at most 64 records and drop newest on overflow.
  * records may be NULL only when capacity is zero. A zero-capacity drain reports
  * queue pressure without removing records. out_drain must have the exact size
  * and version. The caller owns both outputs for the call. Outputs and queued

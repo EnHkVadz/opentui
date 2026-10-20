@@ -3797,6 +3797,10 @@ test "Scene feedback ABI validates records and preserves the pending ticket on r
     invalid = first;
     invalid.abi_version += 1;
     try std.testing.expectEqual(c.OT_UNSUPPORTED_VERSION, ot_scene_frame_step_with_geometry(handle, &id, &invalid, &config, null, 0, &output, &geometry));
+    // Version 1 bindings passed max_work_items before the recording; their records are rejected, not misread.
+    var stale = config;
+    stale.abi_version = 1;
+    try std.testing.expectEqual(c.OT_UNSUPPORTED_VERSION, ot_scene_frame_step_with_geometry(handle, &id, &first, &stale, null, 0, &output, &geometry));
     invalid = first;
     invalid.hook_generation += 1;
     try std.testing.expectEqual(c.OT_STALE_FRAME, ot_scene_frame_step_with_geometry(handle, &id, &invalid, &config, null, 0, &output, &geometry));
