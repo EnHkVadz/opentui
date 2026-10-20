@@ -70,53 +70,45 @@ describe("native renderer stats", () => {
     expectRenderedStats(renderer.getNativeStats(), 3, 10)
   })
 
-  test("frameWork counts the work of each presented scene frame", async () => {
-    const result = await createTestRenderer({ width: 4, height: 2 })
-    renderer = result.renderer
-    renderer.root.add(new TextRenderable(renderer, { content: "abc", width: 3, height: 1 }))
-    const zero = Object.fromEntries(
-      Object.keys(renderer.getNativeStats().frameWork).map((key) => [key, 0]),
-    ) as NativeFrameWork
-    const steady = {
-      ...zero,
-      viewPreparations: 2,
-      membersPainted: 1,
-      memberCells: 3,
-      cellsCleared: 16,
-      hitCellsWritten: 3,
-      hitCellsCleared: 16,
-      hitCellsCompared: 8,
-      layoutRounds: 1,
+  test("frameWork counts the work of each presented scene frame, with and without nativeSceneFullFrame", async () => {
+    for (const nativeSceneFullFrame of [false, true]) {
+      const result = await createTestRenderer({ width: 4, height: 2, nativeSceneFullFrame })
+      renderer = result.renderer
+      renderer.root.add(new TextRenderable(renderer, { content: "abc", width: 3, height: 1 }))
+      const zero = Object.fromEntries(
+        Object.keys(renderer.getNativeStats().frameWork).map((key) => [key, 0]),
+      ) as NativeFrameWork
+      const forced = nativeSceneFullFrame ? 1 : 0
+      const steady = {
+        ...zero,
+        viewPreparations: 2,
+        membersPainted: 1,
+        memberCells: 3,
+        cellsCleared: 16,
+        hitCellsWritten: 3,
+        hitCellsCleared: 16,
+        hitCellsCompared: 8,
+        layoutRounds: 1,
+      }
+      await result.renderOnce()
+      expect(renderer.getNativeStats().frameWork).toEqual({
+        ...steady,
+        workFrameId: 1,
+        candidateVisits: 2,
+        geometryReads: 2,
+        yogaSolves: 1,
+        rowsDiffed: 2,
+        fullPathReasons: 2 | forced,
+      })
+      // An unchanged frame compares rows instead of diffing them, and reuses preparation unless forced.
+      await result.renderOnce()
+      const unchanged = { workFrameId: 2, rowsCompared: 2, candidateVisits: 2 * forced, fullPathReasons: forced }
+      expect(renderer.getNativeStats().frameWork).toEqual({ ...steady, ...unchanged })
+      expect(renderer.getStats().frameWork).toEqual(renderer.getNativeStats().frameWork)
+      renderer.destroy()
+      await renderer.closed
+      renderer = null
     }
-    await result.renderOnce()
-    expect(renderer.getNativeStats().frameWork).toEqual({
-      ...steady,
-      workFrameId: 1,
-      candidateVisits: 2,
-      geometryReads: 2,
-      yogaSolves: 1,
-      rowsDiffed: 2,
-      fullPathReasons: 2,
-    })
-    // An unchanged frame reuses preparation and compares rows instead of diffing them.
-    await result.renderOnce()
-    expect(renderer.getNativeStats().frameWork).toEqual({ ...steady, workFrameId: 2, rowsCompared: 2 })
-    expect(renderer.getStats().frameWork).toEqual(renderer.getNativeStats().frameWork)
-  })
-
-  test("nativeSceneFullFrame makes unchanged frames prepare every node", async () => {
-    const result = await createTestRenderer({ width: 4, height: 2, nativeSceneFullFrame: true })
-    renderer = result.renderer
-    renderer.root.add(new TextRenderable(renderer, { content: "abc", width: 3, height: 1 }))
-    await result.renderOnce()
-    await result.renderOnce()
-    const { candidateVisits, geometryReads, rowsCompared, fullPathReasons } = renderer.getNativeStats().frameWork
-    expect({ candidateVisits, geometryReads, rowsCompared, fullPathReasons }).toEqual({
-      candidateVisits: 2,
-      geometryReads: 0,
-      rowsCompared: 2,
-      fullPathReasons: 1,
-    })
   })
 })
 

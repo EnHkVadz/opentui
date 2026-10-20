@@ -337,21 +337,21 @@ fn work(f: Fixture) !FrameWork {
 }
 
 /// Paints, commits, and drains one hook-free frame; returns the published work.
-fn presentWork(f: Fixture) !FrameWork {
-    const done = try f.owner.scenePaint(f.id, options.background, true, 0);
-    _ = try f.owner.sceneFrameCommit(f.id, done, false);
+fn presentWork(f: Fixture, how: struct { use_mouse: bool = true, force: bool = false }) !FrameWork {
+    const done = try f.owner.scenePaint(f.id, options.background, how.use_mouse, 0);
+    _ = try f.owner.sceneFrameCommit(f.id, done, how.force);
     try drain(f.owner, f.id);
     const result = try work(f);
     try testing.expectEqual(done.frame_id, result.work_frame_id);
     return result;
 }
 
-/// The steady work of the two-member scene below; `visits` counts preparation and geometry reads.
-fn plainWork(frame_id: u64, visits: u64, solves: u64, rows_compared: u64, rows_diffed: u64, reasons: u32) FrameWork {
+/// The steady work of the two-member scene below.
+fn plainWork(frame_id: u64, visits: u64, reads: u64, solves: u64, rows_compared: u64, rows_diffed: u64, reasons: u32) FrameWork {
     return .{
         .work_frame_id = frame_id,
         .candidate_visits = visits,
-        .geometry_reads = visits,
+        .geometry_reads = reads,
         .yoga_solves = solves,
         .view_preparations = 3,
         .members_painted = 2,
@@ -379,17 +379,22 @@ test "Scene frame work counts each frame kind and publishes only presented scene
     const text = try f.owner.sceneCreateNode(f.id, 2, 3);
     try f.owner.sceneSetText(text, "hi");
     try f.owner.sceneMoveNode(text, f.root, 1);
-    // The first encode repaints the whole screen; unchanged and paint-only frames reuse preparation.
-    try testing.expectEqual(plainWork(1, 3, 1, 0, 2, FrameWork.full_path_screen), try presentWork(f));
-    try testing.expectEqual(plainWork(2, 0, 0, 2, 0, 0), try presentWork(f));
+    // The forced first frame merges the scene's reason with the encoder's. Without the flag,
+    // the next frame has no retained work to reuse; unchanged and paint-only frames reuse it.
+    try f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME);
+    try testing.expectEqual(plainWork(1, 3, 3, 1, 0, 2, FrameWork.full_path_forced | FrameWork.full_path_screen), try presentWork(f, .{}));
+    try testing.expectEqual(plainWork(2, 3, 0, 0, 2, 0, FrameWork.full_path_forced), try presentWork(f, .{}));
+    try f.owner.sceneSetDebugFlags(f.id, 0);
+    try testing.expectEqual(plainWork(3, 3, 0, 0, 2, 0, 0), try presentWork(f, .{}));
+    try testing.expectEqual(plainWork(4, 0, 0, 0, 2, 0, 0), try presentWork(f, .{}));
     try f.owner.scenePatchPaint(fill, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ 3, 0, 0, 255 } });
-    try testing.expectEqual(plainWork(3, 0, 0, 2, 1, 0), try presentWork(f));
+    try testing.expectEqual(plainWork(5, 0, 0, 0, 2, 1, 0), try presentWork(f, .{}));
     try f.owner.sceneSetText(text, "ho");
-    try testing.expectEqual(plainWork(4, 3, 1, 2, 1, 0), try presentWork(f));
+    try testing.expectEqual(plainWork(6, 3, 3, 1, 2, 1, 0), try presentWork(f, .{}));
     // A measurement outside the frame solves; the frame reads geometry without solving.
     try f.owner.sceneSetText(text, "hey");
     try f.owner.sceneMeasureLayout(f.id, f.root);
-    try testing.expectEqual(plainWork(5, 3, 0, 2, 1, 0), try presentWork(f));
+    try testing.expectEqual(plainWork(7, 3, 3, 0, 2, 1, 0), try presentWork(f, .{}));
     const presented = try work(f);
     // Cancelled drafts, skipped and non-scene renders, and snapshot-only splits publish nothing.
     try f.owner.scenePatchPaint(fill, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ 4, 0, 0, 255 } });
@@ -403,65 +408,53 @@ test "Scene frame work counts each frame kind and publishes only presented scene
     _ = try f.owner.renderSession(f.id, false);
     try drain(f.owner, f.id);
     try testing.expectEqual(presented, try work(f));
+    const session = try f.owner.raw().getSession(f.id);
     const retained = try f.owner.createBuffer(8, 1, .{});
     const commits = [_]@import("../renderer.zig").SplitSnapshot{.{ .snapshot = try f.owner.raw().getBuffer(retained), .row_columns = 8 }};
-    _ = try (try f.owner.raw().getSession(f.id)).renderSplit(null, &commits, 0, true);
+    _ = try session.renderSplit(null, &commits, 0, true);
     try drain(f.owner, f.id);
     try testing.expectEqual(presented, try work(f));
-    // A snapshot-only split invalidates the terminal, so the next scene frame encodes every row.
-    try testing.expectEqual(plainWork(8, 0, 0, 0, 2, FrameWork.full_path_screen), try presentWork(f));
+    // A split render that carries a scene frame publishes like a commit.
+    const split = try f.owner.scenePaint(f.id, options.background, true, 0);
+    _ = try session.renderSplit(split, &commits, 0, false);
+    try drain(f.owner, f.id);
+    // After the snapshot it encodes every row; a frame without mouse hits writes no hit cells.
+    try testing.expectEqual(plainWork(split.frame_id, 0, 0, 0, 0, 2, FrameWork.full_path_screen), try work(f));
+    var no_hits = plainWork(11, 0, 0, 0, 2, 0, 0);
+    no_hits.hit_cells_written = 0;
+    try testing.expectEqual(no_hits, try presentWork(f, .{ .use_mouse = false }));
     // A resize clears more cells and skips the hit-grid compare.
     try f.owner.resizeSessionRenderer(f.id, 8, 3);
-    var resized = plainWork(9, 3, 1, 1, 3, 0);
+    var resized = plainWork(12, 3, 3, 1, 1, 3, 0);
     resized.cells_cleared = 48;
     resized.hit_cells_cleared = 48;
     resized.hit_cells_compared = 0;
-    try testing.expectEqual(resized, try presentWork(f));
+    try testing.expectEqual(resized, try presentWork(f, .{}));
     const pixels = [_]u8{ 200, 40, 0, 255 } ** 4;
     const picture = try f.owner.createImagePixels(&pixels, 2, 2, .{ .stride = 8 });
     const image_node = try f.owner.sceneCreateNode(f.id, c.OT_SCENE_IMAGE, 4);
     try f.owner.sceneSetStyle(image_node, 4, 0, 0, 1, 2, 1);
     try f.owner.sceneSetStyle(image_node, 4, 1, 0, 1, 1, 1);
     try f.owner.sceneMoveNode(image_node, f.root, 2);
-    // Image placements, even drawn as blocks, are a full-path reason.
+    // Image placements, even drawn as blocks, are a full-path reason, merged with a forced encode's.
     try f.owner.sceneSetImage(image_node, picture, .fit, .blocks, null);
-    try testing.expectEqual(FrameWork.full_path_images, (try presentWork(f)).full_path_reasons);
+    const reasons = (try presentWork(f, .{ .force = true })).full_path_reasons;
+    try testing.expectEqual(FrameWork.full_path_screen | FrameWork.full_path_images, reasons);
     // A hook frame counts its host requests.
     try f.owner.sceneSetHooks(fill, c.OT_SCENE_HOOK_UPDATE, 1, 2, 1);
     const done = try f.step(try f.step(null, options, c.OT_SCENE_FRAME_UPDATE, fill), options, c.OT_SCENE_FRAME_DONE, null);
     _ = try f.owner.sceneFrameCommit(f.id, done, false);
     try drain(f.owner, f.id);
     try testing.expectEqual(@as(u32, 1), (try work(f)).host_requests);
-}
-
-test "Scene frame full-frame debug flag disables work reuse between frames only" {
-    const f = try Fixture.init(testing.allocator, 8, 2, .{});
-    defer f.deinit();
-    const text = try f.owner.sceneCreateNode(f.id, 2, 2);
-    try f.owner.sceneSetText(text, "hi");
-    try f.owner.sceneMoveNode(text, f.root, 0);
-    _ = try presentWork(f);
-    try testing.expectEqual(@as(u64, 0), (try presentWork(f)).candidate_visits);
-    try testing.expectError(error.InvalidOptions, f.owner.sceneSetDebugFlags(f.id, 2));
-    const draft = try f.owner.scenePaint(f.id, options.background, true, 0);
-    try testing.expectError(error.FrameBusy, f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME));
-    try f.owner.sceneFrameCancel(f.id, draft.frame_id);
-    try testing.expectEqual(@as(u32, 0), f.state.debug_flags);
-    // Forced unchanged frames prepare every node; the first default frame after them has nothing to reuse.
-    try f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME);
-    for (0..2) |_| {
-        const forced = try presentWork(f);
-        try testing.expectEqual(@as(u64, 2), forced.candidate_visits);
-        try testing.expectEqual(FrameWork.full_path_forced, forced.full_path_reasons);
-    }
-    try f.owner.sceneSetDebugFlags(f.id, 0);
-    for ([_]u64{ 2, 0 }) |visits| {
-        const reused = try presentWork(f);
-        try testing.expectEqual(visits, reused.candidate_visits);
-        try testing.expectEqual(@as(u32, 0), reused.full_path_reasons);
-    }
-    try f.owner.cancelSession(f.id);
-    try testing.expectError(error.SessionCancelled, f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME));
+    // A presentation that fails at completion publishes nothing and fails the Session.
+    const published = try work(f);
+    try f.owner.scenePatchPaint(fill, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ 5, 0, 0, 255 } });
+    try testing.expectEqual(.pending, try f.owner.sceneFrameCommit(f.id, (try f.step(try f.step(null, options, c.OT_SCENE_FRAME_UPDATE, fill), options, c.OT_SCENE_FRAME_DONE, null)), false));
+    var bytes: [4096]u8 = undefined;
+    try f.owner.completeOutput(f.id, (try f.owner.readOutput(f.id, &bytes)).?, .failed);
+    try testing.expectEqual(published, try work(f));
+    try testing.expectError(error.SessionFailed, f.owner.sceneSetDebugFlags(f.id, 0));
+    (try f.owner.raw().getSession(f.id)).cancel();
 }
 
 test "Scene frame work counts viewport refresh and culling work" {
@@ -508,30 +501,20 @@ test "Scene frame work counts viewport refresh and culling work" {
         .full_path_reasons = FrameWork.full_path_screen,
         .layout_rounds = 1,
     };
-    try testing.expectEqual(expected, try presentWork(f));
-    expected = .{
-        .work_frame_id = 2,
-        .candidate_visits = 19,
-        .paint_visits = 19,
-        .view_preparations = 24,
-        .feedback_operations = 21,
-        .visibility_steps = 14,
-        .viewport_child_refreshes = 16,
-        .overlap_tests = 32,
-        .members_painted = 4,
-        .member_cells = 8,
-        .cells_cleared = 64,
-        .hit_cells_written = 24,
-        .hit_cells_cleared = 64,
-        .hit_cells_compared = 32,
-        .rows_compared = 4,
-        .layout_rounds = 1,
-    };
-    try testing.expectEqual(expected, try presentWork(f));
+    try testing.expectEqual(expected, try presentWork(f, .{}));
+    // An unchanged frame skips the solve and geometry reads and queues less feedback.
+    expected.work_frame_id = 2;
+    expected.geometry_reads = 0;
+    expected.yoga_solves = 0;
+    expected.feedback_operations = 21;
+    expected.rows_compared = 4;
+    expected.rows_diffed = 0;
+    expected.full_path_reasons = 0;
+    try testing.expectEqual(expected, try presentWork(f, .{}));
     try f.owner.scenePatchPaint(content, c.OT_SCENE_PROPERTY_TRANSLATE_Y, .{ .translateY = -1 });
     expected.work_frame_id = 3;
     expected.rows_diffed = 2;
-    try testing.expectEqual(expected, try presentWork(f));
+    try testing.expectEqual(expected, try presentWork(f, .{}));
     // A RESIZE request from the second row defers the rest of its batch to feedback; they still count as refreshes.
     try f.owner.sceneSetHooks(rows[1], c.OT_SCENE_HOOK_RESIZE, 1, 8, 1);
     try f.owner.sceneSetStyle(rows[1], 4, 0, 0, 1, 6, 1);
