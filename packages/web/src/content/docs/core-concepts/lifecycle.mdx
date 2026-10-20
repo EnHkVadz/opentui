@@ -116,8 +116,9 @@ By default, each renderer installs handlers that call `renderer.destroy()` for t
 | `SIGPIPE`  | Broken pipe              |
 | `SIGBUS`   | Bus error                |
 
-After `destroy()`, a signal that arrives before `closed` settles sets raw mode to `false` and ends the process
-with that signal, unless other listeners handle it.
+After `destroy()`, the handlers stay until `closed` settles. A signal in that window that only renderers handle sets
+raw mode to `false` and ends the process with that signal. If an application listener handles it, including a
+`process.once` listener, the process keeps running and restoration finishes first.
 
 Set `exitSignals` to replace this list. Use an empty list when the application or a server owns process shutdown:
 

@@ -1966,8 +1966,8 @@ const rawModeActions: Record<string, (renderer: CliRenderer) => Promise<unknown>
   resume: (renderer) => renderer.resume(),
   "failing resume": (renderer) => renderer.resume().catch(() => {}),
   "resume after destroy": (renderer) => (renderer.destroy(), renderer.closed.then(() => renderer.resume())),
-  // The signal ends the process, so raw mode goes off before restoration.
-  "signal after destroy": (renderer) => (renderer.destroy(), process.emit("SIGHUP", "SIGHUP"), renderer.closed),
+  // The app's listener handles the signal, so the process lives on and restoration still comes first.
+  "handled signal after destroy": (renderer) => (renderer.destroy(), process.emit("SIGHUP", "SIGHUP"), renderer.closed),
   // The first Ctrl+C destroys; the second reaches the signal hook without a signal.
   "two Ctrl+C presses": (renderer) => (renderer.stdin.push("\x03\x03"), renderer.closed),
 }
@@ -1978,7 +1978,7 @@ test.each<{ action: string; sync: string[]; settled: string[] }>([
   { action: "resume", sync: ["on"], settled: ["on"] },
   { action: "failing resume", sync: [], settled: [] },
   { action: "resume after destroy", sync: [], settled: ["off after close"] },
-  { action: "signal after destroy", sync: ["off"], settled: ["off", "off after mouse bytes after close"] },
+  { action: "handled signal after destroy", sync: [], settled: ["off after mouse bytes after close"] },
   { action: "two Ctrl+C presses", sync: [], settled: ["off after mouse bytes after close"] },
 ])("$action switches raw mode on the far side of the mouse mode bytes", async ({ action, sync, settled }) => {
   const stdin = createTestStdin()

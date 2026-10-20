@@ -21,7 +21,10 @@ type ExitMode =
   | "session-error-exit"
   | "setup-throw-exit"
   | "signal-after-destroy"
+  | "signal-once-before"
+  | "signal-on-after"
   | "signal-during-resume"
+  | "signal-two-renderers"
 
 const runFixture = (code: number | "SIGTERM", mode: ExitMode) => {
   const result = spawnSync(process.execPath, [...getFixtureRuntimeArgs(), fixturePath, code.toString(), mode], {
@@ -61,8 +64,12 @@ const exitCases: Array<[mode: ExitMode, code: number | "SIGTERM", cleanupExits: 
   ["session-error-exit", 1, true, false],
   ["setup-throw-exit", 1, false, false],
   ["signal-after-destroy", "SIGTERM", false, false],
+  // A listener that handles the signal keeps the process alive, as without the renderer's hook.
+  ["signal-once-before", 0, false, true],
+  ["signal-on-after", 0, false, true],
   // Signal listeners return with raw mode, so a signal during resume() destroys the renderer.
   ["signal-during-resume", 0, false, true],
+  ["signal-two-renderers", "SIGTERM", false, false],
 ]
 
 describe("destroy on process exit", () => {
@@ -72,6 +79,7 @@ describe("destroy on process exit", () => {
 
       expect(result.status ?? result.signal).toBe(code)
       expect(stdout).toContain("raw mode disabled")
+      if (mode === "signal-two-renderers") expect(stdout).toContain("second renderer left raw mode")
       for (const sequence of restores ? ["\x1b[?1049l", "\x1b[?2004l"] : []) {
         expect(stdout).toContain(sequence)
         expect(stdout.indexOf(sequence)).toBeLessThan(stdout.indexOf("raw mode disabled"))
