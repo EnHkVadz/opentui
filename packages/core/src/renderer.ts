@@ -3632,9 +3632,10 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const sameElement = maybeRenderableId === this.lastOverRenderableNum
     this.lastOverRenderableNum = maybeRenderableId
     const maybeRenderable = Renderable.renderablesByNumber.get(maybeRenderableId)
-    // A left drag belongs to the node that got the press: the first motion report can already be past it.
+    // A left drag belongs to the node that got the left press: the first motion report can already be past it.
+    // Other buttons' events keep the record; any left event (moves report left) ends it.
     const pressed = this.pressedRenderable
-    this.pressedRenderable = mouseEvent.type === "down" ? maybeRenderable : undefined
+    if (mouseEvent.button === MouseButton.LEFT) this.pressedRenderable = undefined
 
     if (
       mouseEvent.type === "down" &&
@@ -3735,8 +3736,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       // Dropping the renderable needs to push another frame when the renderer is not live
       // to update the hit grid, otherwise capturedRenderable won't be in the hit grid and will not receive mouse events
       this.requestRender()
-      // Until that frame, the hit grid still holds the source, so a release over it must not drop onto itself.
-      if (maybeRenderable === source) return true
+      // A source does not drop onto itself or its subtree; until that frame the hit grid still holds the source.
+      if (maybeRenderable && this.isWithinContainer(maybeRenderable, source)) return true
       if (maybeRenderable) {
         this.sendMouseEvent(maybeRenderable, new MouseEvent(maybeRenderable, { ...mouseEvent, type: "drop", source }))
       }
@@ -3747,6 +3748,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     let event: MouseEvent | undefined
     if (target) {
       if (isLeftDrag) this.capturedRenderable = target
+      else if (mouseEvent.type === "down" && mouseEvent.button === MouseButton.LEFT) this.pressedRenderable = target
       event = this.dispatchMouseEvent(target, mouseEvent)
     } else {
       this.lastOverRenderable = undefined

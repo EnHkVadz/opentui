@@ -846,8 +846,9 @@ describe("renderer handleMouseData", () => {
     }
   })
 
-  // Steps: `move|down|drag|up:x,y[:right]`, `frame` (render once), or `kill:id` (destroy). A spans x 1-6 and B x 12-17,
-  // both y 1-4. Each node logs `id:type`, with `(source id)` when the event names a drag source.
+  // Steps: `move|down|drag|up|scroll:x,y[:right|:ctrl]`, `frame` (render once), `kill:id` (destroy), or `clear`
+  // (clearSelection). A spans x 1-6, B x 12-17, and selectable S x 20-25, all y 1-4; B's child C spans x 16-17, y 1-2.
+  // Each node logs `id:type`, then `@target` when the event bubbled and `(source id)` when it names a drag source.
   const pointerPaths: [string, string, string][] = [
     [
       "left drag captures the source until release",
@@ -856,8 +857,8 @@ describe("renderer handleMouseData", () => {
     ],
     [
       "right drag routes by hit test",
-      "move:2,2 down:2,2:right drag:3,2 drag:13,2 up:13,2:right",
-      "A:over A:move A:down A:drag A:out B:over B:drag B:up",
+      "move:2,2 down:2,2:right drag:13,2 drag:3,2 up:3,2:right",
+      "A:over A:move A:down A:out B:over B:drag B:out A:over A:drag A:up",
     ],
     [
       "release on empty space skips drop",
@@ -866,8 +867,8 @@ describe("renderer handleMouseData", () => {
     ],
     [
       "first drag report off the pressed node",
-      "down:2,2 drag:13,2 frame drag:14,2 up:14,2",
-      "A:down B:over A:drag A:drag A:drag-end A:up B:drop(A) B:up",
+      "down:2,2 scroll:13,2 drag:13,2 frame drag:14,2 up:14,2",
+      "A:down B:scroll B:over A:drag A:drag A:drag-end A:up B:drop(A) B:up",
     ],
     [
       "destroyed pressed node falls back to the hit",
@@ -879,7 +880,27 @@ describe("renderer handleMouseData", () => {
     [
       "left drag after a right release",
       "down:2,2 up:2,2:right drag:13,2 up:13,2",
-      "A:down A:up B:over B:drag B:drag-end B:up",
+      "A:down A:up B:over A:drag A:drag-end A:up B:drop(A) B:up",
+    ],
+    [
+      "right press during a left press",
+      "down:2,2 down:13,2:right drag:14,2 up:14,2 up:14,2:right",
+      "A:down B:down A:drag A:drag-end A:up B:drop(A) B:up B:up",
+    ],
+    [
+      "press that starts a selection",
+      "down:2,2 up:2,2 down:21,2 clear drag:13,2 up:13,2",
+      "A:down A:up S:down B:over B:drag B:drag-end B:up",
+    ],
+    [
+      "ctrl press that extends a selection",
+      "down:21,2 drag:22,2 up:22,2 down:2,2:ctrl clear drag:13,2 up:13,2",
+      "S:down S:drag S:up B:over B:drag B:drag-end B:up",
+    ],
+    [
+      "release over a child of the source",
+      "down:13,2 drag:14,2 frame drag:16,1 up:16,1",
+      "B:down B:drag C:over(B) B:over@C(B) B:drag B:drag-end B:up",
     ],
   ]
 
@@ -887,13 +908,26 @@ describe("renderer handleMouseData", () => {
     try {
       const log: string[] = []
       const nodes = new Map<string, TestRenderable>()
-      for (const [id, left] of [
-        ["A", 1],
-        ["B", 12],
+      for (const [id, left, top, width, parent] of [
+        ["A", 1, 1, 6, ""],
+        ["B", 12, 1, 6, ""],
+        ["S", 20, 1, 6, ""],
+        ["C", 4, 0, 2, "B"],
       ] as const) {
-        const node = new TestRenderable(renderer, { id, position: "absolute", left, top: 1, width: 6, height: 4 })
-        node.onMouse = (event) => log.push(`${id}:${event.type}${event.source ? `(${event.source.id})` : ""}`)
-        renderer.root.add(node)
+        const node = new TestRenderable(renderer, {
+          id,
+          position: "absolute",
+          left,
+          top,
+          width,
+          height: width === 2 ? 2 : 4,
+        })
+        node.selectable = id === "S"
+        node.onMouse = (event) =>
+          log.push(
+            `${id}:${event.type}${event.target === node ? "" : `@${event.target?.id}`}${event.source ? `(${event.source.id})` : ""}`,
+          )
+        ;(nodes.get(parent) ?? renderer.root).add(node)
         nodes.set(id, node)
       }
       await renderOnce()
@@ -903,8 +937,10 @@ describe("renderer handleMouseData", () => {
         const pressed = button === "right" ? MouseButtons.RIGHT : MouseButtons.LEFT
         if (kind === "frame") await renderOnce()
         else if (kind === "kill") nodes.get(at)!.destroy()
+        else if (kind === "clear") renderer.clearSelection()
+        else if (kind === "scroll") await mockMouse.scroll(x, y, "down")
         else if (kind === "move" || kind === "drag") await mockMouse.moveTo(x, y)
-        else if (kind === "down") await mockMouse.pressDown(x, y, pressed)
+        else if (kind === "down") await mockMouse.pressDown(x, y, pressed, { modifiers: { ctrl: button === "ctrl" } })
         else await mockMouse.release(x, y, pressed)
       }
       expect(log.join(" ")).toBe(expected)
