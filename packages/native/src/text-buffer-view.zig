@@ -2160,9 +2160,14 @@ pub const UnifiedTextBufferView = struct {
                     finalizePendingWord(wctx);
                     if (wctx.failed) return;
                 }
+                const previous_cp = if (wctx.word_chunk) |previous| utf8.chunkWordClassEdges(previous.getBytes(wctx.text_buffer.memRegistry())).last_cp else null;
                 wctx.word_chunk = chunk;
                 wctx.word_chunk_col_start = 0;
-                wctx.word_chunk_byte_start = 0;
+                // Zero-width text that continues the previous chunk's grapheme stays with it; a pending word holds that grapheme.
+                var break_state: @import("uucode").grapheme.BreakState = .default;
+                const joins = wctx.pending_word_pieces.items.len == 0 and chunk_bytes.len > 0 and !utf8.isGraphemeBreak(previous_cp, utf8.decodeUtf8Unchecked(chunk_bytes, 0).cp, &break_state, wctx.text_buffer.widthMethod());
+                wctx.word_chunk_byte_start = if (joins) @intCast(utf8.zeroWidthPrefixLen(chunk_bytes, wctx.text_buffer.tabWidth(), wctx.text_buffer.controlDisplay(), wctx.text_buffer.widthMethod())) else 0;
+                if (!addVirtualChunkSticky(wctx, chunk, 0, wctx.word_chunk_byte_start, 0, 0)) return;
                 const last_word_class = if (layout) |info| blk: {
                     var cjk_idx: usize = 0;
                     for (info.wrap_breaks) |wrap_break| {
@@ -2212,7 +2217,6 @@ pub const UnifiedTextBufferView = struct {
                         wctx.source_line_has_non_whitespace = true;
                     }
                 }
-                wctx.word_chunk = null;
             }
 
             /// One grapheme that is wider than the space left, plus the zero-width clusters
