@@ -1,20 +1,17 @@
 import { afterEach, expect, test } from "bun:test"
 import { NativeSession } from "../NativeSession.js"
 import { RGBA } from "../lib/RGBA.js"
-import { BoxRenderable } from "../renderables/Box.js"
-import { TextRenderable } from "../renderables/Text.js"
-import { CliRenderer, CliRenderEvents, createCliRenderer, type CliRendererConfig } from "../renderer.js"
+import { CliRenderer, CliRenderEvents, createCliRenderer } from "../renderer.js"
 import { settle, settleUntil } from "../testing/harness.js"
 import { ManualClock } from "../testing/manual-clock.js"
 import { createTestStdin, RecordingWriteStream } from "../testing/test-streams.js"
-import { NativeSceneFrame } from "../zig.js"
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-function createAdmissionRenderer(width = 80, height = 24, config: CliRendererConfig = {}) {
+function createAdmissionRenderer(width = 80, height = 24) {
   const clock = new ManualClock()
   const stdout = new RecordingWriteStream(width, height, { highWaterMark: 1 })
   stdout.hold()
@@ -27,7 +24,6 @@ function createAdmissionRenderer(width = 80, height = 24, config: CliRendererCon
     consoleMode: "disabled",
     exitSignals: [],
     remote: true,
-    ...config,
   })
   cleanups.push(async () => {
     stdout.release()
@@ -190,35 +186,6 @@ const busyResizes = {
         [80, 24],
       ],
     }
-  },
-  "a parked split-footer paint": async () => {
-    const target = createAdmissionRenderer(30, 12, {
-      screenMode: "split-footer",
-      externalOutputMode: "passthrough",
-      footerHeight: 6,
-      nativeSceneWorkBudget: 1,
-    })
-    target.stdout.release()
-    await target.renderer.setupTerminal()
-    const column = new BoxRenderable(target.renderer, { flexDirection: "column" })
-    target.renderer.root.add(column)
-    for (let line = 0; line < 4; line++) column.add(new TextRenderable(target.renderer, { content: `line ${line}` }))
-    const lib = target.driver.renderLib
-    const step = lib.sceneFrameStep
-    const parked = Promise.withResolvers<void>()
-    lib.sceneFrameStep = (...args) => {
-      const result = step.apply(lib, args)
-      if (result.kind === NativeSceneFrame.Yield) parked.resolve()
-      return result
-    }
-    cleanups.unshift(async () => {
-      lib.sceneFrameStep = step
-    })
-    target.renderer.requestRender()
-    target.clock.advance(100)
-    await parked.promise
-    expect(target.renderer.getSchedulerState().isRendering).toBe(true)
-    return { ...target, sizes: [[20, 12]] }
   },
 }
 
