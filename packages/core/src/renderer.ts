@@ -3584,6 +3584,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }
 
   private processSingleMouseEvent(mouseEvent: RawMouseEvent): boolean {
+    // A left drag belongs to the node that got the left press: the first motion report can already be past it.
+    // Every left down or up ends the record, also one that returns early; other events keep it.
+    const pressed = this.pressedRenderable
+    const left = mouseEvent.button === MouseButton.LEFT
+    if (left && (mouseEvent.type === "down" || mouseEvent.type === "up")) this.pressedRenderable = undefined
     if (this._splitHeight > 0) {
       if (mouseEvent.y < this.renderOffset) {
         return false
@@ -3632,10 +3637,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     const sameElement = maybeRenderableId === this.lastOverRenderableNum
     this.lastOverRenderableNum = maybeRenderableId
     const maybeRenderable = Renderable.renderablesByNumber.get(maybeRenderableId)
-    // A left drag belongs to the node that got the left press: the first motion report can already be past it.
-    // Other buttons' events keep the record; any left event (moves report left) ends it.
-    const pressed = this.pressedRenderable
-    if (mouseEvent.button === MouseButton.LEFT) this.pressedRenderable = undefined
 
     if (
       mouseEvent.type === "down" &&
@@ -3743,12 +3744,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       }
     }
 
-    const isLeftDrag = mouseEvent.type === "drag" && mouseEvent.button === MouseButton.LEFT
+    const isLeftDrag = left && mouseEvent.type === "drag"
     const target = isLeftDrag && pressed && !pressed.isDestroyed ? pressed : maybeRenderable
     let event: MouseEvent | undefined
     if (target) {
       if (isLeftDrag) this.capturedRenderable = target
-      else if (mouseEvent.type === "down" && mouseEvent.button === MouseButton.LEFT) this.pressedRenderable = target
+      else if (left && mouseEvent.type === "down") this.pressedRenderable = target
       event = this.dispatchMouseEvent(target, mouseEvent)
     } else {
       this.lastOverRenderable = undefined

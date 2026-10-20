@@ -846,8 +846,9 @@ describe("renderer handleMouseData", () => {
     }
   })
 
-  // Steps: `move|down|drag|up|scroll:x,y[:right|:ctrl]`, `frame` (render once), `kill:id` (destroy), or `clear`
-  // (clearSelection). A spans x 1-6, B x 12-17, and selectable S x 20-25, all y 1-4; B's child C spans x 16-17, y 1-2.
+  // Steps: `move|down|drag|up|scroll:x,y[:right|:ctrl]`, `frame` (render once), `kill:id` (destroy), `clear`
+  // (clearSelection), or `console` (show it). A spans x 1-6, B x 12-17, and selectable S x 20-25, all y 1-4; B's
+  // child C spans x 16-17, y 1-2.
   // Each node logs `id:type`, then `@target` when the event bubbled and `(source id)` when it names a drag source.
   const pointerPaths: [string, string, string][] = [
     [
@@ -889,13 +890,18 @@ describe("renderer handleMouseData", () => {
     ],
     [
       "press that starts a selection",
-      "down:2,2 up:2,2 down:21,2 clear drag:13,2 up:13,2",
-      "A:down A:up S:down B:over B:drag B:drag-end B:up",
+      "down:2,2 down:21,2 clear drag:13,2 up:13,2",
+      "A:down S:down B:over B:drag B:drag-end B:up",
     ],
     [
       "ctrl press that extends a selection",
       "down:21,2 drag:22,2 up:22,2 down:2,2:ctrl clear drag:13,2 up:13,2",
       "S:down S:drag S:up B:over B:drag B:drag-end B:up",
+    ],
+    [
+      "release in the console ends the press",
+      "down:2,2 console drag:2,17 up:2,17 down:3,17 drag:13,2 up:13,2",
+      "A:down B:over B:drag B:drag-end B:up",
     ],
     [
       "release over a child of the source",
@@ -938,7 +944,8 @@ describe("renderer handleMouseData", () => {
         if (kind === "frame") await renderOnce()
         else if (kind === "kill") nodes.get(at)!.destroy()
         else if (kind === "clear") renderer.clearSelection()
-        else if (kind === "scroll") await mockMouse.scroll(x, y, "down")
+        else if (kind === "console") renderer.console.show()
+        else if (kind === "scroll") await mockMouse.scroll(x, y, "up")
         else if (kind === "move" || kind === "drag") await mockMouse.moveTo(x, y)
         else if (kind === "down") await mockMouse.pressDown(x, y, pressed, { modifiers: { ctrl: button === "ctrl" } })
         else await mockMouse.release(x, y, pressed)
