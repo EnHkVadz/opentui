@@ -80,7 +80,7 @@ export function getKeyBindingKey(binding: KeyBindingLike): string {
 // A typed key falls back when it is one non-ASCII character, or when its base key is
 // a digit (AZERTY types `&` on the 1 key). Dvorak Ctrl+J (base `c`) stays Ctrl+J.
 function getBaseCodeKeyName({ name: typedName, baseCode }: KeyBindingLookup): string | undefined {
-  if (baseCode === undefined || baseCode < 32 || baseCode === 127) {
+  if (baseCode === undefined || baseCode <= 32 || baseCode === 127) {
     return undefined
   }
   if (!/^[^\x00-\x7f]$/u.test(typedName) && (baseCode < 48 || baseCode > 57)) {

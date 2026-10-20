@@ -29,6 +29,7 @@ export const baseLayoutVectors = [
   ["𠀀", 99, "ctrl", ["ctrl+c"]],
   ["ㅊ", 67, "ctrl", ["ctrl+c"]],
   ["ㅊ", undefined, "ctrl", []],
+  ["ㅊ", 32, "ctrl", []],
   ["ㅎ", 103, "ctrl", ["ctrl+ㅎ", "ctrl+g"]],
   ["ㅓ", 106, "", ["j"]],
   ["ㅣ", 108, "", ["l"]],

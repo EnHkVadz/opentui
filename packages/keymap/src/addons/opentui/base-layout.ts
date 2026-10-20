@@ -4,7 +4,7 @@ import type { Keymap } from "../../index.js"
 const BASE_LAYOUT_FALLBACK_RESOURCE = Symbol("keymap:base-layout-fallback")
 
 function getBaseLayoutKeyName({ name: typedName, baseCode }: KeyEvent): string | undefined {
-  if (baseCode === undefined || baseCode < 32 || baseCode === 127) {
+  if (baseCode === undefined || baseCode <= 32 || baseCode === 127) {
     return undefined
   }
   if (!/^[^\x00-\x7f]$/u.test(typedName) && (baseCode < 48 || baseCode > 57)) {
