@@ -424,7 +424,7 @@ typedef struct ot_scene_layout {
  * non-scene renders, and snapshot-only split renders leave them unchanged.
  * work_frame_id is the frame_id of the counted frame, or zero before the first.
  * full_path_reasons holds OT_SCENE_FULL_PATH_* bits: FORCED (debug flag),
- * SCREEN (forced, invalidated, resized, or palette-changed encode), IMAGES
+ * SCREEN (forced, invalidated, or palette-changed encode), IMAGES
  * (image placements present). */
 typedef struct ot_scene_stats {
     uint32_t struct_size;
@@ -849,12 +849,16 @@ ot_status ot_scene_paint(ot_context *, const ot_handle *session, const uint16_t 
 ot_status ot_scene_hit_test(ot_context *, const ot_handle *session, int32_t x, int32_t y, uint32_t *out_num);
 ot_status ot_scene_get_stats(ot_context *, const ot_handle *session, ot_scene_stats *out_stats);
 #define OT_SCENE_DEBUG_FULL_FRAME UINT32_C(1)
-/* Diagnostic switches for tests. FULL_FRAME makes every frame take the full
- * path: no work is reused between frames. Output is unchanged; only the work
- * counts in ot_scene_stats differ, and frames report OT_SCENE_FULL_PATH_FORCED.
- * Other bits return OT_INVALID_ARGUMENT, a Session without a scene root
- * OT_INVALID_PHASE, and an active frame attempt, draft, or frame lease
- * OT_FRAME_BUSY. Rejection keeps the flags. Flags persist for the Session. */
+/* Diagnostic switches for tests. FULL_FRAME rebuilds each frame's preparation
+ * and paint lists instead of reusing the last frame's, and every later shortcut
+ * that skips frame work also tests it; Yoga still solves only a dirty tree, and
+ * geometry is read only for nodes laid out since the last solve. Output is
+ * unchanged; only the work counts in ot_scene_stats differ, and frames report
+ * OT_SCENE_FULL_PATH_FORCED. A closed or cancelled Session returns
+ * OT_SESSION_CLOSED, a failed one OT_OUTPUT_FAILED, other bits
+ * OT_INVALID_ARGUMENT, a Session without a scene OT_INVALID_PHASE, and an active
+ * frame attempt, draft, or frame lease OT_FRAME_BUSY. Rejection keeps the flags.
+ * Flags persist for the Session. */
 ot_status ot_scene_set_debug_flags(ot_context *, const ot_handle *session, uint32_t flags);
 /* Copied renderer cursor state. Style: block=0 line=1 underline=2 default=3.
  * Colors use normalized float channels. Output requires exact size/version. */

@@ -360,7 +360,7 @@ pub const Scene = struct {
     preparation_dirty: bool = true,
     // The active attempt's work; it moves into the DONE draft and dies with a cancelled attempt.
     frame_work: renderer.FrameWork = .{},
-    // OT_SCENE_DEBUG_* bits. FULL_FRAME disables every shortcut so frames take today's full path.
+    // OT_SCENE_DEBUG_* bits. Every shortcut that skips frame work tests FULL_FRAME; today that is work-list reuse.
     debug_flags: u32 = 0,
     test_sort_steps: if (builtin.is_test) u64 else void = if (builtin.is_test) 0 else {},
 

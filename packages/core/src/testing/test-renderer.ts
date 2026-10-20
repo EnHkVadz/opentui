@@ -17,7 +17,7 @@ export interface TestRendererOptions extends CliRendererConfig {
   height?: number
   kittyKeyboard?: boolean
   otherModifiersMode?: boolean
-  /** Every frame takes the full native path and reuses no work (`OT_SCENE_DEBUG_FULL_FRAME`). Output is unchanged. */
+  /** Every frame rebuilds its native preparation and paint lists instead of reusing the last frame's (`OT_SCENE_DEBUG_FULL_FRAME`). Output is unchanged. */
   nativeSceneFullFrame?: boolean
 }
 export type TestRenderer = CliRenderer
