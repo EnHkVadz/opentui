@@ -1955,44 +1955,71 @@ test("Session teardown after successful setup releases listeners without closing
 
 // ---- Destroy resilience ----
 
-// A cooked tty echoes mouse reports, so raw mode must cover every byte that turns mouse tracking on or off.
-const rawModeActions: Record<string, (renderer: CliRenderer) => Promise<void>> = {
+// A cooked tty echoes mouse reports, so raw mode covers the bytes that turn mouse tracking off on destroy and on on
+// resume. suspend() leaves raw mode at once: callers hand the terminal to the next program without awaiting it.
+// Each entry is a raw-mode switch, noting whether the sink already holds the mouse off (or on) bytes and whether the
+// Session has finished its close; a switch on a timer that fires before the close finishes fails the destroy rows.
+const rawModeActions: Record<string, (renderer: CliRenderer) => Promise<unknown>> = {
   destroy: (renderer) => (renderer.destroy(), renderer.closed),
+  "destroy behind held output": (renderer) => (renderer.destroy(), renderer.closed),
   suspend: (renderer) => renderer.suspend(),
   resume: (renderer) => renderer.resume(),
-  "suspend, then destroy": (renderer) => (renderer.suspend().catch(() => {}), renderer.destroy(), renderer.closed),
+  "failing resume": (renderer) => renderer.resume().catch(() => {}),
+  "resume after destroy": (renderer) => (renderer.destroy(), renderer.closed.then(() => renderer.resume())),
+  // The signal ends the process, so raw mode goes off before restoration.
+  "signal after destroy": (renderer) => (renderer.destroy(), process.emit("SIGHUP"), renderer.closed),
 }
-test.each([
-  { action: "destroy", held: false },
-  { action: "destroy", held: true },
-  { action: "suspend", held: false },
-  { action: "suspend", held: true },
-  { action: "resume", held: false },
-  { action: "suspend, then destroy", held: false },
-])("$action switches raw mode on the far side of the mouse mode bytes (held sink: $held)", async ({ action, held }) => {
+test.each<{ action: string; sync: string[]; settled: string[] }>([
+  { action: "destroy", sync: [], settled: ["off after mouse bytes after close"] },
+  { action: "destroy behind held output", sync: [], settled: ["off after mouse bytes after close"] },
+  { action: "suspend", sync: ["off"], settled: ["off"] },
+  { action: "resume", sync: ["on"], settled: ["on"] },
+  { action: "failing resume", sync: [], settled: [] },
+  { action: "resume after destroy", sync: [], settled: ["off after close"] },
+  { action: "signal after destroy", sync: ["off"], settled: ["off", "off after mouse bytes after close"] },
+])("$action switches raw mode on the far side of the mouse mode bytes", async ({ action, sync, settled }) => {
   const stdin = createTestStdin()
   const stdout = createCollectingStdout(80, 24)
-  const rawMode: [boolean, boolean][] = []
+  const rawMode: string[] = []
+  let failRawMode = false
+  let driver: NativeSession | undefined
   stdin.setRawMode = (enabled) => {
-    rawMode.push([enabled, stdout.text().includes(enabled ? "\x1b[?1000h" : "\x1b[?1000l")])
+    if (enabled && failRawMode) throw new Error("EIO")
+    const mouseBytes = stdout.text().includes(enabled ? "\x1b[?1000h" : "\x1b[?1000l")
+    const closed = driver?.disposed === true
+    rawMode.push(`${enabled ? "on" : "off"}${mouseBytes ? " after mouse bytes" : ""}${closed ? " after close" : ""}`)
     return stdin
   }
-  const renderer = await createCliRenderer({ stdin, stdout, exitSignals: [] })
-  if (action === "resume") await renderer.suspend()
-  stdout.clear()
-  rawMode.length = 0
-  if (held) {
-    stdout.hold()
-    renderer.root.add(new TextRenderable(renderer, { content: "x" }))
-    await settleUntil(() => stdout.pendingWrite)
+  const keepAlive = () => {}
+  process.on("SIGHUP", keepAlive)
+  const renderer = await createCliRenderer({ stdin, stdout, exitSignals: ["SIGHUP"] })
+  driver = renderer.nativeScene.driver
+  try {
+    if (action.includes("resume")) await renderer.suspend()
+    stdout.clear()
+    rawMode.length = 0
+    failRawMode = action === "failing resume"
+    if (action.endsWith("held output")) {
+      stdout.hold()
+      renderer.root.add(new TextRenderable(renderer, { content: "x" }))
+      await settleUntil(() => stdout.pendingWrite)
+    }
+    const done = rawModeActions[action]!(renderer).catch((error: Error) => error.message)
+    const log = [...rawMode]
+    await settle(4)
+    stdout.release()
+    await done
+    await renderer.idle()
+    expect({ sync: log, settled: rawMode, suspended: renderer.controlState === "explicit_suspended" }).toEqual({
+      sync,
+      settled,
+      suspended: ["suspend", "failing resume", "resume after destroy"].includes(action),
+    })
+  } finally {
+    renderer.destroy()
+    await renderer.closed
+    process.off("SIGHUP", keepAlive)
   }
-  const done = rawModeActions[action]!(renderer)
-  await settle(4)
-  stdout.release()
-  await done
-  renderer.destroy()
-  await renderer.closed
-  expect(rawMode[0]).toEqual(action === "resume" ? [true, false] : [false, true])
 })
 
 test("constructor cleans up listeners when input setup fails", async () => {

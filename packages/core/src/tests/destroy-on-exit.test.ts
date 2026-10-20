@@ -18,8 +18,11 @@ type ExitMode =
   | "on-destroy-exit"
   | "destroy-listener-exit"
   | "root-destroyed-exit"
+  | "session-error-exit"
+  | "setup-throw-exit"
+  | "signal-after-destroy"
 
-const runFixture = (code: number, mode: ExitMode) => {
+const runFixture = (code: number | "SIGTERM", mode: ExitMode) => {
   const result = spawnSync(process.execPath, [...getFixtureRuntimeArgs(), fixturePath, code.toString(), mode], {
     cwd: packageRoot,
     env: process.env,
@@ -44,27 +47,31 @@ function getFixtureRuntimeArgs(): string[] {
   ]
 }
 
-// Every exit path restores raw mode, the alternate screen, and bracketed paste before the process ends; a cleanup
-// callback that terminates the process runs only after restoration.
-const exitCases: Array<[mode: ExitMode, code: number, cleanupExits: boolean]> = [
-  ["idle", 0, false],
-  ["idle", 1, false],
-  ["during-render", 0, false],
-  ["destroy-first", 0, false],
-  ["on-destroy-exit", 0, true],
-  ["destroy-listener-exit", 0, true],
-  ["root-destroyed-exit", 0, true],
+// Every exit path leaves raw mode. A Session that can still write restores the alternate screen and bracketed paste
+// first; a cleanup callback that terminates the process runs only after restoration.
+const exitCases: Array<[mode: ExitMode, code: number | "SIGTERM", cleanupExits: boolean, restores: boolean]> = [
+  ["idle", 0, false, true],
+  ["idle", 1, false, true],
+  ["during-render", 0, false, true],
+  ["destroy-first", 0, false, true],
+  ["on-destroy-exit", 0, true, true],
+  ["destroy-listener-exit", 0, true, true],
+  ["root-destroyed-exit", 0, true, true],
+  ["session-error-exit", 1, true, false],
+  ["setup-throw-exit", 1, false, false],
+  ["signal-after-destroy", "SIGTERM", false, false],
 ]
 
 describe("destroy on process exit", () => {
-  for (const [mode, code, cleanupExits] of exitCases) {
+  for (const [mode, code, cleanupExits, restores] of exitCases) {
     it(`restores the terminal for ${mode} exit with code ${code}`, () => {
       const { result, stdout } = runFixture(code, mode)
 
-      expect(result.status).toBe(code)
+      expect(result.status ?? result.signal).toBe(code)
       expect(stdout).toContain("raw mode disabled")
-      for (const sequence of ["\x1b[?1049l", "\x1b[?2004l"]) {
+      for (const sequence of restores ? ["\x1b[?1049l", "\x1b[?2004l"] : []) {
         expect(stdout).toContain(sequence)
+        expect(stdout.indexOf(sequence)).toBeLessThan(stdout.indexOf("raw mode disabled"))
         if (cleanupExits) expect(stdout.indexOf(sequence)).toBeLessThan(stdout.indexOf("cleanup terminating"))
       }
       expect(stdout.includes("cleanup terminating")).toBe(cleanupExits)

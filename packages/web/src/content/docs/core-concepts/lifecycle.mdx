@@ -83,7 +83,7 @@ does not prove that restoration bytes reached the terminal.
 
 Renderer destruction performs these actions:
 
-- Removes renderer signal, process, resize, input, and warning listeners.
+- Removes renderer process, resize, input, and warning listeners. Signal listeners stay until `closed` settles.
 - Stops renderer timers, frame scheduling, capability detection, and memory snapshots.
 - Removes the data listener, pauses the input stream, and clears parser state.
 - Starts ordered split-footer flushing and terminal restoration, and restores the configured `stdout.write` method.
@@ -115,6 +115,9 @@ By default, each renderer installs handlers that call `renderer.destroy()` for t
 | `SIGBREAK` | Ctrl+Break on Windows    |
 | `SIGPIPE`  | Broken pipe              |
 | `SIGBUS`   | Bus error                |
+
+After `destroy()`, a signal that arrives before `closed` settles sets raw mode to `false` and ends the process
+with that signal, unless other listeners handle it.
 
 Set `exitSignals` to replace this list. Use an empty list when the application or a server owns process shutdown:
 

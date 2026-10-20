@@ -1147,7 +1147,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.realStdoutWrite.call(this.stdout, ANSI.reset)
   }
 
-  private exitHandler: () => void = (() => {
+  private exitHandler = ((signal?: NodeJS.Signals) => {
+    if (this._isDestroyed) {
+      // The hook outlives destroy() until raw mode is off; the signal still ends the process.
+      this.leaveRawMode()
+      this.removeExitListeners()
+      if (signal && process.listenerCount(signal) === 0) process.kill(process.pid, signal)
+      return
+    }
     this.destroy()
     void this.closed
       .then(() => {
@@ -1157,15 +1164,16 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   }).bind(this)
 
   private nativeProcessExitHandler = (): void => {
-    if (!this.nativeSession || this.nativeSession.disposed) return
-    const restored = this.nativeSession.restoreOnExit()
+    // A disposed Session cannot restore, but raw mode must still go off.
+    const disposed = this.nativeSession.disposed
+    const restored = !disposed && this.nativeSession.restoreOnExit()
     try {
       this.leaveRawMode()
       this.destroy()
       if (this.flushTerminalInputOnClose) this.lib.terminalFlushInput()
     } finally {
       this.nativeSession.dispose()
-      if (!restored && this._terminalIsSetup) {
+      if (!disposed && !restored && this._terminalIsSetup) {
         console.error("Native scene output cancelled at process exit; terminal restoration did not complete")
       }
     }
@@ -1288,6 +1296,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
         .finally(() => {
           if (this.nativeSession.error && !this.nativeSession.disposed) this.nativeSession.dispose()
           this.leaveRawMode()
+          this.removeExitListeners()
+          this.removeCleanupListener(process, "exit", this.nativeProcessExitHandler)
           if (this.flushTerminalInputOnClose) this.lib.terminalFlushInput()
           this.releaseStreamLease()
         })
@@ -1442,12 +1452,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this._openConsoleOnError = config.openConsoleOnError ?? process.env.NODE_ENV !== "production"
       this._onDestroy = config.onDestroy
 
-      this.setupInput()
       process.on("exit", this.nativeProcessExitHandler)
-      void this.nativeSession.closed.then(
-        () => this.removeCleanupListener(process, "exit", this.nativeProcessExitHandler),
-        () => this.removeCleanupListener(process, "exit", this.nativeProcessExitHandler),
-      )
+      this.setupInput()
       void this.nativeSession.closed.catch((error) => {
         if (this._isDestroyed) return
         try {
@@ -4413,10 +4419,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     } else {
       nativeTransition = this.nativeSession.suspend()
     }
-    // Destroy leaves raw mode after its own restoration; an interrupted suspend wrote none.
-    nativeTransition = this.trackNativeTerminalTransition(
-      nativeTransition.finally(() => this._isDestroyed || this.leaveRawMode()),
-    )
+    nativeTransition = this.trackNativeTerminalTransition(nativeTransition)
     if (this._controlState !== RendererControlState.EXPLICIT_SUSPENDED) {
       // A failed native split drain leaves the host suspended until the caller retries.
       this._previousControlState = this._controlState
@@ -4445,6 +4448,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.stopTerminalKeepAlive()
 
     this.themeModeState?.cancelRefresh()
+
+    if (this.stdin.setRawMode) {
+      this.stdin.setRawMode(false)
+    }
+
     this.stdin.pause()
     return nativeTransition
   }
@@ -4452,6 +4460,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   public resume(): Promise<void> {
     if (
       !this._terminalIsSetup ||
+      this._isDestroyed ||
       this.nativeTerminalTransition ||
       this._controlState !== RendererControlState.EXPLICIT_SUSPENDED
     ) {
@@ -4462,6 +4471,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this.lib.sessionSplitControl(this.nativeSession.context, this.nativeSession.session, {
         kind: "clear-transition",
       })
+    }
+    // Raw mode is on before the Session writes the bytes that turn mouse reports back on.
+    try {
+      this.stdin.setRawMode?.(true)
+    } catch (error) {
+      return Promise.reject(error)
     }
     const resumed = this.trackNativeTerminalTransition(this.nativeSession.resume(), () => {
       if (this._isDestroyed) return
@@ -4477,8 +4492,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       }
     })
     void resumed.catch(() => {})
-    // The Session writes the bytes that turn mouse reports back on in a later turn, after raw mode is on.
-    this.stdin.setRawMode?.(true)
     return resumed
   }
 
@@ -4587,7 +4600,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.removeCleanupListener(process, "uncaughtException", this.handleError)
     this.removeCleanupListener(process, "unhandledRejection", this.handleError)
     this.removeCleanupListener(process, "warning", this.warningHandler)
-    this.removeExitListeners()
 
     if (this.resizeTimeoutId !== null) {
       this.clock.clearTimeout(this.resizeTimeoutId)
