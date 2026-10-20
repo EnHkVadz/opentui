@@ -714,7 +714,7 @@ export class NativeScene {
     }
   }
 
-  /** Destruction, Session shutdown, or a resize may have cancelled the attempt already; keep the caller's failure. */
+  /** Destruction or Session shutdown may have cancelled the attempt already; keep the caller's failure. */
   private cancelAttempt(request: NativeSceneFrameRequest): void {
     if (this.driver.disposed) return
     this.changeLayout()

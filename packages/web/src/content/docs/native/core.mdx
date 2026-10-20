@@ -173,7 +173,7 @@ A callback error, such as one from a measurement provider, can throw after nativ
 Core runs node hooks synchronously and does not await their returned promises.
 A record request returns control to JavaScript once per frame, before painting. It does not give the event loop a turn.
 `NativeScene.paint()` runs the whole frame in one synchronous call: no event-loop work runs between preparation and painting.
-Sessions share the event loop at frame granularity. The Session scheduler runs one ready frame per turn.
+The Session scheduler runs one ready callback per turn, so Sessions take turns at least once per frame.
 
 Core's internal driver sets `max_layout_rounds` to `8` and `max_host_requests` to `65_536`.
 The request limit does not interrupt Yoga or a slow JavaScript hook.
