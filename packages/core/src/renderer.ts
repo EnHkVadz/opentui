@@ -837,7 +837,6 @@ export enum MouseButton {
 const rendererTracker = singleton("RendererTracker", () => ({
   renderers: new Set<CliRenderer>(),
   streamOwners: new WeakMap<object, CliRenderer>(),
-  signalHandlers: new WeakSet<Function>(),
 }))
 
 /**
@@ -1148,21 +1147,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.realStdoutWrite.call(this.stdout, ANSI.reset)
   }
 
-  private exitHandler = ((signal?: NodeJS.Signals) => {
-    if (this._isDestroyed && signal) {
-      // The hook outlives destroy() until raw mode is off. A signal that only renderers handle still ends the process.
-      if (process.listeners(signal).some((listener) => !rendererTracker.signalHandlers.has(listener))) return
-      this.leaveRawMode()
-      this.removeExitListeners()
-      if (process.listenerCount(signal) > 0) return
-      try {
-        process.kill(process.pid, signal)
-      } catch {
-        // Windows can raise only SIGINT and SIGTERM.
-        process.exit(1)
-      }
-      return
-    }
+  private exitHandler: () => void = (() => {
     this.destroy()
     void this.closed
       .then(() => {
@@ -1304,7 +1289,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
         .finally(() => {
           if (this.nativeSession.error && !this.nativeSession.disposed) this.nativeSession.dispose()
           this.leaveRawMode()
-          this.removeExitListeners()
           this.removeCleanupListener(process, "exit", this.nativeProcessExitHandler)
           if (this.flushTerminalInputOnClose) this.lib.terminalFlushInput()
           this.releaseStreamLease()
@@ -1488,13 +1472,11 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     }
   }
 
-  private addExitListeners(prepend = false): void {
+  private addExitListeners(): void {
     if (this._exitListenersAdded || this.exitSignals.length === 0) return
 
-    rendererTracker.signalHandlers.add(this.exitHandler)
     this.exitSignals.forEach((signal) => {
-      if (prepend) process.prependListener(signal, this.exitHandler)
-      else process.addListener(signal, this.exitHandler)
+      process.addListener(signal, this.exitHandler)
     })
 
     this._exitListenersAdded = true
@@ -4610,11 +4592,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.removeCleanupListener(process, "uncaughtException", this.handleError)
     this.removeCleanupListener(process, "unhandledRejection", this.handleError)
     this.removeCleanupListener(process, "warning", this.warningHandler)
-    if (this._exitListenersAdded) {
-      // In the destroy window the hook runs first, so it still sees `once` listeners that handle the signal.
-      this.removeExitListeners()
-      this.addExitListeners(true)
-    }
+    this.removeExitListeners()
 
     if (this.resizeTimeoutId !== null) {
       this.clock.clearTimeout(this.resizeTimeoutId)

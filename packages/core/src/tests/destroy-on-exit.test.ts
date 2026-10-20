@@ -20,13 +20,9 @@ type ExitMode =
   | "root-destroyed-exit"
   | "session-error-exit"
   | "setup-throw-exit"
-  | "signal-after-destroy"
-  | "signal-once-before"
-  | "signal-on-after"
   | "signal-during-resume"
-  | "signal-two-renderers"
 
-const runFixture = (code: number | "SIGTERM", mode: ExitMode) => {
+const runFixture = (code: number, mode: ExitMode) => {
   const result = spawnSync(process.execPath, [...getFixtureRuntimeArgs(), fixturePath, code.toString(), mode], {
     cwd: packageRoot,
     env: process.env,
@@ -53,7 +49,7 @@ function getFixtureRuntimeArgs(): string[] {
 
 // Every exit path leaves raw mode. A Session that can still write restores the alternate screen and bracketed paste
 // first; a cleanup callback that terminates the process runs only after restoration.
-const exitCases: Array<[mode: ExitMode, code: number | "SIGTERM", cleanupExits: boolean, restores: boolean]> = [
+const exitCases: Array<[mode: ExitMode, code: number, cleanupExits: boolean, restores: boolean]> = [
   ["idle", 0, false, true],
   ["idle", 1, false, true],
   ["during-render", 0, false, true],
@@ -63,13 +59,8 @@ const exitCases: Array<[mode: ExitMode, code: number | "SIGTERM", cleanupExits: 
   ["root-destroyed-exit", 0, true, true],
   ["session-error-exit", 1, true, false],
   ["setup-throw-exit", 1, false, false],
-  ["signal-after-destroy", "SIGTERM", false, false],
-  // A listener that handles the signal keeps the process alive, as without the renderer's hook.
-  ["signal-once-before", 0, false, true],
-  ["signal-on-after", 0, false, true],
   // Signal listeners return with raw mode, so a signal during resume() destroys the renderer.
   ["signal-during-resume", 0, false, true],
-  ["signal-two-renderers", "SIGTERM", false, false],
 ]
 
 describe("destroy on process exit", () => {
@@ -77,9 +68,8 @@ describe("destroy on process exit", () => {
     it(`restores the terminal for ${mode} exit with code ${code}`, () => {
       const { result, stdout } = runFixture(code, mode)
 
-      expect(result.status ?? result.signal).toBe(code)
+      expect(result.status).toBe(code)
       expect(stdout).toContain("raw mode disabled")
-      if (mode === "signal-two-renderers") expect(stdout).toContain("second renderer left raw mode")
       for (const sequence of restores ? ["\x1b[?1049l", "\x1b[?2004l"] : []) {
         expect(stdout).toContain(sequence)
         expect(stdout.indexOf(sequence)).toBeLessThan(stdout.indexOf("raw mode disabled"))
