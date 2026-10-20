@@ -1514,6 +1514,7 @@ test "TextBufferView word wrapping - CJK policy retains bytes and uses legacy fi
         .{ .parts = &.{ "\u{65e5}\u{672c}\u{1f44b}", "\u{1f3fb}" ++ ("\u{8a9e}\u{6587}" ** 256) ++ "\u{65e5}", "abc" }, .width = 4, .widths = &(([_]u32{4} ** 258) ++ [_]u32{ 2, 3 }) },
         .{ .parts = &.{ "\u{304b}", "\u{3099}\u{304f}" }, .width = 8, .widths = &.{4} },
         .{ .parts = &.{ "a\u{301}", "\u{65e5}\u{672c}" }, .width = 4, .widths = &.{ 3, 2 } },
+        .{ .parts = &.{ "xa ", "\u{e33}x" }, .width = 3, .widths = &.{ 3, 2 } },
         .{ .parts = &.{ "\u{306f}", "\u{309a}\u{3072}" }, .width = 8, .widths = &.{4} },
         .{ .parts = &.{"\u{304b}\u{200d}\u{3099}"}, .width = 8, .widths = &.{2} },
         .{ .parts = &.{"\u{306f}\u{200d}\u{309a}"}, .width = 8, .widths = &.{2} },
@@ -1541,8 +1542,9 @@ test "TextBufferView word wrapping - CJK policy retains bytes and uses legacy fi
                 actual.clearRetainingCapacity();
                 for (view.getVirtualLines()) |line| {
                     for (line.chunks.items) |chunk| {
-                        const bytes = chunk.chunk.getBytes(tb.memRegistry());
-                        try actual.appendSlice(std.testing.allocator, bytes[chunk.byte_start_in_chunk..][0..chunk.byte_len]);
+                        const bytes = chunk.chunk.getBytes(tb.memRegistry())[chunk.byte_start_in_chunk..][0..chunk.byte_len];
+                        try std.testing.expectEqual(chunk.width_cols, @import("../utf8.zig").calculateTextWidth(bytes, tb.tabWidth(), tb.controlDisplay(), false, method));
+                        try actual.appendSlice(std.testing.allocator, bytes);
                     }
                 }
                 try std.testing.expectEqualStrings(expected, actual.items);
@@ -4700,6 +4702,13 @@ test "TextBufferView word wrap keeps zero-width pieces with the text before them
         // After a tab or a zero-width space the next chunk starts a grapheme, so it wraps with the word.
         .{ .pieces = &.{ "a\t", "\u{301}x" }, .width = 3 },
         .{ .pieces = &.{ "xa ", "\u{200b}x" }, .width = 3 },
+        .{ .pieces = &.{ "xa \u{200d}", "\u{301}x" }, .width = 3 },
+        .{ .pieces = &.{ "a\t", "\u{301}", "\u{308}x" }, .width = 3 },
+        // Only the grapheme that continues the previous chunk stays; text after the next break wraps with its word.
+        .{ .pieces = &.{ "xa ", "\u{301}\u{200b}\u{308}x" }, .width = 3 },
+        .{ .pieces = &.{ "xa ", "\u{301}\u{2060}x" }, .width = 3 },
+        // A grapheme never continues across a line break.
+        .{ .pieces = &.{ "a\n\u{301}", "\u{200b}x" }, .width = 3 },
     };
     for (std.enums.values(@import("../utf8.zig").WidthMethod)) |method| for (rows) |row| for ([_]text_buffer_view.WrapMode{ .word, .char }) |mode| {
         const tb = try TextBuffer.init(std.testing.allocator, &pools.graphemes, &pools.links, method);

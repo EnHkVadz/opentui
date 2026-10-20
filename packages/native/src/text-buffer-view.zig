@@ -2160,13 +2160,18 @@ pub const UnifiedTextBufferView = struct {
                     finalizePendingWord(wctx);
                     if (wctx.failed) return;
                 }
-                const previous_cp = if (wctx.word_chunk) |previous| utf8.chunkWordClassEdges(previous.getBytes(wctx.text_buffer.memRegistry())).last_cp else null;
+                // Zero-width text that continues the previous chunk's grapheme stays with it; a pending word holds that grapheme.
+                var previous_cp: ?u21 = if (wctx.pending_word_pieces.items.len > 0) null else if (wctx.word_chunk) |previous| utf8.chunkWordClassEdges(previous.getBytes(wctx.text_buffer.memRegistry())).last_cp else null;
+                var break_state: @import("uucode").grapheme.BreakState = .default;
                 wctx.word_chunk = chunk;
                 wctx.word_chunk_col_start = 0;
-                // Zero-width text that continues the previous chunk's grapheme stays with it; a pending word holds that grapheme.
-                var break_state: @import("uucode").grapheme.BreakState = .default;
-                const joins = wctx.pending_word_pieces.items.len == 0 and chunk_bytes.len > 0 and !utf8.isGraphemeBreak(previous_cp, utf8.decodeUtf8Unchecked(chunk_bytes, 0).cp, &break_state, wctx.text_buffer.widthMethod());
-                wctx.word_chunk_byte_start = if (joins) @intCast(utf8.zeroWidthPrefixLen(chunk_bytes, wctx.text_buffer.tabWidth(), wctx.text_buffer.controlDisplay(), wctx.text_buffer.widthMethod())) else 0;
+                wctx.word_chunk_byte_start = 0;
+                while (wctx.word_chunk_byte_start < chunk_bytes.len) : (wctx.word_chunk_byte_start += utf8.decodeUtf8Unchecked(chunk_bytes, wctx.word_chunk_byte_start).len) {
+                    const cp = utf8.decodeUtf8Unchecked(chunk_bytes, wctx.word_chunk_byte_start).cp;
+                    if (utf8.isGraphemeBreak(previous_cp, cp, &break_state, wctx.text_buffer.widthMethod())) break;
+                    previous_cp = cp;
+                }
+                if (utf8.calculateTextWidth(chunk_bytes[0..wctx.word_chunk_byte_start], wctx.text_buffer.tabWidth(), wctx.text_buffer.controlDisplay(), false, wctx.text_buffer.widthMethod()) > 0) wctx.word_chunk_byte_start = 0;
                 if (!addVirtualChunkSticky(wctx, chunk, 0, wctx.word_chunk_byte_start, 0, 0)) return;
                 const last_word_class = if (layout) |info| blk: {
                     var cjk_idx: usize = 0;
@@ -2477,6 +2482,7 @@ pub const UnifiedTextBufferView = struct {
                     wctx.source_line_has_non_whitespace = false;
                     wctx.source_line_cjk_breaks = true;
                     wctx.word_line_last_cp = null;
+                    wctx.word_chunk = null;
                 }
                 if (comptime wrap_mode == .word and calculation == .measure) {
                     wctx.logical_measure_line_count = 0;
