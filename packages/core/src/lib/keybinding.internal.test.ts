@@ -10,7 +10,7 @@ import {
   matchesKeyBinding,
   type KeyAliasMap,
 } from "./keybinding.internal.js"
-import { baseLayoutBindings, baseLayoutVectors } from "./keybinding.base-layout.fixture.js"
+import { baseLayoutBindings, baseLayoutVectorName, baseLayoutVectors } from "./keybinding.base-layout.fixture.js"
 
 describe("keybinding.internal", () => {
   describe("getKeyBindingKey", () => {
@@ -47,12 +47,17 @@ describe("keybinding.internal", () => {
   describe("base-layout fallback", () => {
     const bindings = baseLayoutBindings.map(parse)
 
-    it.each(baseLayoutVectors)("%s/%j %s matches %j", (name, baseCode, modifiers, matches) => {
-      const lookup = { ...parse(`${modifiers}+${name}`), baseCode }
-      const matched = bindings.filter((binding) => matchesKeyBinding(lookup, binding)).map((binding) => binding.action)
-      expect(getKeyBindingAction(buildKeyBindingsMap(bindings), lookup)).toBe(matches[0])
-      expect(matched.sort()).toEqual([...matches].sort())
-    })
+    for (const row of baseLayoutVectors) {
+      const [name, baseCode, modifiers, matches] = row
+      it(baseLayoutVectorName(row), () => {
+        const lookup = { ...parse(`${modifiers}+${name}`), baseCode }
+        const matched = bindings
+          .filter((binding) => matchesKeyBinding(lookup, binding))
+          .map((binding) => binding.action)
+        expect(getKeyBindingAction(buildKeyBindingsMap(bindings), lookup)).toBe(matches[0])
+        expect(matched.sort()).toEqual([...matches].sort())
+      })
+    }
 
     function parse(text: string) {
       const parts = text.split("+")
