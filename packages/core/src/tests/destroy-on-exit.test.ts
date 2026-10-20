@@ -65,7 +65,9 @@ const exitCases: Array<[mode: ExitMode, code: number, cleanupExits: boolean, res
 
 describe("destroy on process exit", () => {
   for (const [mode, code, cleanupExits, restores] of exitCases) {
-    it(`restores the terminal for ${mode} exit with code ${code}`, () => {
+    // Windows has no POSIX signals: SIGTERM ends the child without running its handlers.
+    const signalTest = mode === "signal-during-resume" && process.platform === "win32" ? it.skip : it
+    signalTest(`restores the terminal for ${mode} exit with code ${code}`, () => {
       const { result, stdout } = runFixture(code, mode)
 
       expect(result.status).toBe(code)
