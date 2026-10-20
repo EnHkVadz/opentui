@@ -185,16 +185,19 @@ type ConformanceRow = [
   context?: ConformanceContext,
 ]
 const CONFORMANCE = conformance.rows as ConformanceRow[]
-// The renderer's explicit-width CPR is pending for its whole start-up window; the split-footer start-up CPR
-// (startupCursorCprActive) is pending only inside it, so "cpr" stands for the first.
-const PENDING_QUERY = { cpr: "explicitWidthCprActive", pixel: "pixelResolutionQueryActive" } as const
+// A pending cursor position request can be answered at any row: the explicit-width probes answer at row 1, the
+// start-up cursor query anywhere, so "cpr" sets both flags.
+const PENDING_QUERY = {
+  cpr: ["explicitWidthCprActive", "startupCursorCprActive"],
+  pixel: ["pixelResolutionQueryActive"],
+} as const
 
 function conformanceContext({ kitty = false, pending = [] }: ConformanceContext = {}): StdinParserOptions {
   const protocolContext: StdinParserOptions["protocolContext"] & {} = { kittyKeyboardEnabled: kitty }
   for (const query of pending) {
-    const field = PENDING_QUERY[query as keyof typeof PENDING_QUERY]
-    if (!field) throw new Error(`unknown pending query in conformance context: ${query}`)
-    protocolContext[field] = true
+    const fields = PENDING_QUERY[query as keyof typeof PENDING_QUERY]
+    if (!fields) throw new Error(`unknown pending query in conformance context: ${query}`)
+    for (const field of fields) protocolContext[field] = true
   }
   return { protocolContext }
 }

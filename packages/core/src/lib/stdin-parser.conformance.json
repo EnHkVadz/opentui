@@ -61,6 +61,7 @@
     ["Kitty mode: CSI 1;2 R is a reply", ["\u001b[1;2R"], ["response(\"\\u001b[1;2R\")"], null, {"kitty": true}],
     ["Kitty mode: Shift+F3 as CSI 13;2 ~", ["\u001b[13;2~"], ["key(\"f3\" shift)"], null, {"kitty": true}],
     ["cursor position report split by a timeout while a cursor position request is pending", ["\u001b[1;2", null, "R"], ["response(\"\\u001b[1;2R\")"], null, {"pending": ["cpr"]}],
+    ["row-12 cursor position report split by a timeout while a cursor position request is pending", ["\u001b[12;5", null, "R"], ["response(\"\\u001b[12;5R\")"], null, {"pending": ["cpr"]}],
     ["pixel-size reply split by a timeout while a pixel-size query is pending", ["\u001b[4;10;", null, "20t"], ["response(\"\\u001b[4;10;20t\")"], null, {"pending": ["pixel"]}],
     ["Kitty mode: Shift+a as CSI u split by a timeout", ["\u001b[97;2", null, "u"], ["key(\"a\" shift)"], null, {"kitty": true}],
     ["cursor position report at home", ["\u001b[1;1R"], ["response(\"\\u001b[1;1R\")"]],
