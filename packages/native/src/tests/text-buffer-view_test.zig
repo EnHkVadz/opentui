@@ -4703,6 +4703,7 @@ test "TextBufferView word wrap keeps zero-width pieces with the text before them
         .{ .pieces = &.{ "a\t", "\u{301}x" }, .width = 3 },
         .{ .pieces = &.{ "xa ", "\u{200b}x" }, .width = 3 },
         .{ .pieces = &.{ "xa \u{200d}", "\u{301}x" }, .width = 3 },
+        .{ .pieces = &.{ "xa ", "\u{200d}\u{301}x" }, .width = 3 },
         .{ .pieces = &.{ "a\t", "\u{301}", "\u{308}x" }, .width = 3 },
         // Only the grapheme that continues the previous chunk stays; text after the next break wraps with its word.
         .{ .pieces = &.{ "xa ", "\u{301}\u{200b}\u{308}x" }, .width = 3 },
