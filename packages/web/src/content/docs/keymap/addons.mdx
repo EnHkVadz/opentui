@@ -177,7 +177,12 @@ It adds the values and types in this section.
 ### Base-layout fallback
 
 `registerBaseLayoutFallback()` appends an event-match resolver that reads `KeyEvent.baseCode`.
-It lets a key binding match the physical base-layout codepoint when Kitty reports one.
+Kitty reports it as the key at the same position on the base layout (US QWERTY).
+The resolver falls back to that key only when the typed key is one non-ASCII character, the same rule as Core's key
+bindings.
+The fallback serves layouts whose letters cannot match a Latin binding: Korean Ctrl+ㅊ and Russian Ctrl+с match `ctrl+c`.
+On Dvorak, Colemak, or AZERTY, an ASCII letter matches as typed: Dvorak Ctrl+J matches `ctrl+j`, not `ctrl+c`.
+A non-ASCII Latin letter, such as AZERTY é or German ß, still falls back.
 
 Register the default event matcher first. Its direct event candidate then runs before the base-layout fallback across all
 active layers.
