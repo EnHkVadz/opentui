@@ -408,7 +408,6 @@ export enum NativeSceneFrame {
   Resize = nativeConstants.OT_SCENE_FRAME_RESIZE,
   LayoutChanged = nativeConstants.OT_SCENE_FRAME_LAYOUT_CHANGED,
   Record = nativeConstants.OT_SCENE_FRAME_RECORD,
-  Yield = nativeConstants.OT_SCENE_FRAME_YIELD,
 }
 
 export enum NativeScenePaintPhase {
@@ -7591,7 +7590,6 @@ export class FFIRenderLib {
             handle,
             previous === null ? null : output,
             config,
-            0xffffffff,
             recordingView,
             recordingLength,
             output,
@@ -7661,7 +7659,6 @@ export class FFIRenderLib {
             handle,
             previous,
             config,
-            0xffffffff,
             recording,
             recordingLength,
             output,

@@ -1,12 +1,12 @@
 // Generated from packages/native/include/opentui.h and scripts/native-abi-pointers.ts.
 // Run `bun run generate:abi` in packages/core. Do not edit.
 // Inspect audit input: bun scripts/native-abi.ts --audit
-// ABI audit SHA-256: 2b36545357f7738df87404a9507ebeb54f38df5cd270fd98c80998f95972863c
+// ABI audit SHA-256: beade20a161c8282579635eafd83763ea3be67403d841a98be200e1005c298a3
 
 export const nativeSymbols = {
   ot_scene_set_hooks: { args: ["ptr", "buffer", "buffer"], returns: "i32" },
   ot_scene_frame_step_with_geometry: {
-    args: ["ptr", "buffer", "ptr", "buffer", "u32", "ptr", "u32", "buffer", "buffer"],
+    args: ["ptr", "buffer", "ptr", "buffer", "ptr", "u32", "buffer", "buffer"],
     returns: "i32",
   },
   ot_scene_frame_get_paint_slots: { args: ["ptr", "buffer", "buffer", "buffer", "u32", "buffer"], returns: "i32" },
@@ -1589,7 +1589,6 @@ export const nativeConstants = {
   OT_SCENE_FRAME_RESIZE: 2,
   OT_SCENE_FRAME_LAYOUT_CHANGED: 3,
   OT_SCENE_FRAME_RECORD: 4,
-  OT_SCENE_FRAME_YIELD: 5,
   OT_SCENE_GEOMETRY_PAINT: 1,
   OT_SCENE_GEOMETRY_PUBLIC: 2,
   OT_SCENE_PROPERTY_Z_INDEX: 1,
