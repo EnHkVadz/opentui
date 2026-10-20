@@ -4478,6 +4478,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     } catch (error) {
       return Promise.reject(error)
     }
+    this.addExitListeners()
     const resumed = this.trackNativeTerminalTransition(this.nativeSession.resume(), () => {
       if (this._isDestroyed) return
       if (this.pendingSplitFooterTransition) this.setPendingSplitFooterTransition(this.pendingSplitFooterTransition)
@@ -4503,7 +4504,6 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.stdin.on("data", this.stdinListener)
     this.stdin.resume()
     this.startTerminalKeepAlive()
-    this.addExitListeners()
 
     this._useMouse = this._suspendedMouseEnabled
 

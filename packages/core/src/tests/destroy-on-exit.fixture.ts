@@ -12,9 +12,11 @@ const terminateDuringCleanup = () => {
 const stdin = new Readable({ read() {} }) as NodeJS.ReadStream & {
   setRawMode: (enabled: boolean) => NodeJS.ReadStream
 }
+// The resume row reports raw mode off only after its suspend.
+let reportRawMode = mode !== "signal-during-resume"
 stdin.setRawMode = (enabled) => {
   if (enabled && mode === "setup-throw-exit") throw new Error("raw mode failed")
-  if (!enabled) writeSync(process.stdout.fd, "raw mode disabled\n")
+  if (!enabled && reportRawMode) writeSync(process.stdout.fd, "raw mode disabled\n")
   return stdin
 }
 
@@ -46,8 +48,14 @@ if (mode === "during-render") {
     process.exit(code)
   })
   renderer.start()
+} else if (mode.startsWith("signal-")) {
+  if (mode === "signal-during-resume") {
+    await renderer.suspend()
+    reportRawMode = true
+    void renderer.resume().catch(() => {})
+  } else renderer.destroy()
+  process.kill(process.pid, "SIGTERM")
 } else {
-  if (mode === "destroy-first" || mode === "signal-after-destroy") renderer.destroy()
-  if (mode === "signal-after-destroy") process.kill(process.pid, "SIGTERM")
-  else process.exit(code)
+  if (mode === "destroy-first") renderer.destroy()
+  process.exit(code)
 }

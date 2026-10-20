@@ -21,6 +21,7 @@ type ExitMode =
   | "session-error-exit"
   | "setup-throw-exit"
   | "signal-after-destroy"
+  | "signal-during-resume"
 
 const runFixture = (code: number | "SIGTERM", mode: ExitMode) => {
   const result = spawnSync(process.execPath, [...getFixtureRuntimeArgs(), fixturePath, code.toString(), mode], {
@@ -60,6 +61,8 @@ const exitCases: Array<[mode: ExitMode, code: number | "SIGTERM", cleanupExits: 
   ["session-error-exit", 1, true, false],
   ["setup-throw-exit", 1, false, false],
   ["signal-after-destroy", "SIGTERM", false, false],
+  // Signal listeners return with raw mode, so a signal during resume() destroys the renderer.
+  ["signal-during-resume", 0, false, true],
 ]
 
 describe("destroy on process exit", () => {
