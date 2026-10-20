@@ -1220,6 +1220,9 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this._usesProcessStdout = stdout === process.stdout
     this.realStdoutWrite = stdout.write
 
+    if ((config as { nativeSceneWorkBudget?: unknown }).nativeSceneWorkBudget !== undefined) {
+      throw new Error("nativeSceneWorkBudget was removed: frames always paint synchronously")
+    }
     this.kittyTransportMode = config.kittyImageTransport ?? "raw"
     const transportCode = KITTY_IMAGE_TRANSPORTS.indexOf(this.kittyTransportMode)
     if (transportCode < 0) throw new TypeError("Invalid kittyImageTransport")
