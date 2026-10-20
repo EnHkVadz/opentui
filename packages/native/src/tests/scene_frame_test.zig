@@ -221,10 +221,9 @@ test "Scene frame reuses committed preparation until a mutation invalidates it" 
     for (0..3) |frame| {
         if (frame == 2) try f.owner.scenePatchPaint(child, c.OT_SCENE_PROPERTY_TRANSLATE_X, .{ .translateX = 3 });
         try f.owner.scenePatchPaint(child, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ @intCast(frame + 2), 0, 0, 255 } });
-        const steps = f.state.test_prepare_steps;
         const done = try f.step(null, options, c.OT_SCENE_FRAME_DONE, null);
         // A background change keeps the retained paint list; a translation rebuilds it.
-        try testing.expectEqual(frame != 1, f.state.test_prepare_steps != steps);
+        try testing.expectEqual(frame != 1, f.state.painted.?.work.candidate_visits != 0);
         try testing.expectEqual(@as(u16, @intCast(frame + 2)), f.cli.getNextBuffer().get(if (frame == 2) 3 else 0, 0).?.bg[0]);
         _ = try f.owner.sceneFrameCommit(f.id, done, true);
         try drain(f.owner, f.id);
@@ -329,4 +328,188 @@ test "Scene idle update metadata keeps the native one call path and excludes hos
     try f.owner.sceneDestroyNode(f.root);
     try testing.expectEqual(@as(u32, 0), f.state.hook_count);
     try testing.expectEqual(@as(u32, 0), f.state.layout_hook_count);
+}
+
+const FrameWork = @import("../renderer.zig").FrameWork;
+
+fn work(f: Fixture) !FrameWork {
+    return (try f.owner.sceneGetStats(f.id)).frameWork;
+}
+
+/// Paints, commits, and drains one hook-free frame; returns the published work.
+fn presentWork(f: Fixture) !FrameWork {
+    const done = try f.owner.scenePaint(f.id, options.background, true, 0);
+    _ = try f.owner.sceneFrameCommit(f.id, done, false);
+    try drain(f.owner, f.id);
+    const result = try work(f);
+    try testing.expectEqual(done.frame_id, result.work_frame_id);
+    return result;
+}
+
+/// The steady work of the two-member scene below; `visits` counts preparation and geometry reads.
+fn plainWork(frame_id: u64, visits: u64, solves: u64, rows_compared: u64, rows_diffed: u64, reasons: u32) FrameWork {
+    return .{
+        .work_frame_id = frame_id,
+        .candidate_visits = visits,
+        .geometry_reads = visits,
+        .yoga_solves = solves,
+        .view_preparations = 3,
+        .members_painted = 2,
+        .member_cells = 10,
+        .cells_cleared = 32,
+        .hit_cells_written = 10,
+        .hit_cells_cleared = 32,
+        .hit_cells_compared = 16,
+        .rows_compared = rows_compared,
+        .rows_diffed = rows_diffed,
+        .full_path_reasons = reasons,
+        .layout_rounds = 1,
+    };
+}
+
+test "Scene frame work counts each frame kind and publishes only presented scene frames" {
+    const f = try Fixture.init(testing.allocator, 8, 2, .{});
+    defer f.deinit();
+    try testing.expectEqual(FrameWork{}, try work(f));
+    const fill = try f.owner.sceneCreateNode(f.id, 1, 2);
+    try f.owner.sceneSetStyle(fill, 4, 0, 0, 1, 2, 1);
+    try f.owner.sceneSetStyle(fill, 4, 1, 0, 1, 1, 1);
+    try f.owner.sceneSetPaint(fill, .{ .background = .{ 2, 0, 0, 255 } });
+    try f.owner.sceneMoveNode(fill, f.root, 0);
+    const text = try f.owner.sceneCreateNode(f.id, 2, 3);
+    try f.owner.sceneSetText(text, "hi");
+    try f.owner.sceneMoveNode(text, f.root, 1);
+    // The first encode repaints the whole screen; unchanged and paint-only frames reuse preparation.
+    try testing.expectEqual(plainWork(1, 3, 1, 0, 2, FrameWork.full_path_screen), try presentWork(f));
+    try testing.expectEqual(plainWork(2, 0, 0, 2, 0, 0), try presentWork(f));
+    try f.owner.scenePatchPaint(fill, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ 3, 0, 0, 255 } });
+    try testing.expectEqual(plainWork(3, 0, 0, 2, 1, 0), try presentWork(f));
+    try f.owner.sceneSetText(text, "ho");
+    try testing.expectEqual(plainWork(4, 3, 1, 2, 1, 0), try presentWork(f));
+    // A measurement outside the frame solves; the frame reads geometry without solving.
+    try f.owner.sceneSetText(text, "hey");
+    try f.owner.sceneMeasureLayout(f.id, f.root);
+    try testing.expectEqual(plainWork(5, 3, 0, 2, 1, 0), try presentWork(f));
+    const presented = try work(f);
+    // Cancelled drafts, skipped and non-scene renders, and snapshot-only splits publish nothing.
+    try f.owner.scenePatchPaint(fill, c.OT_SCENE_PROPERTY_BACKGROUND, .{ .background = .{ 4, 0, 0, 255 } });
+    const cancelled = try f.owner.scenePaint(f.id, options.background, true, 0);
+    try f.owner.sceneFrameCancel(f.id, cancelled.frame_id);
+    try testing.expectEqual(presented, try work(f));
+    try f.owner.writeSession(f.id, &([_]u8{'x'} ** 8192));
+    try testing.expectEqual(.skipped, try f.owner.sceneFrameCommit(f.id, try f.owner.scenePaint(f.id, options.background, true, 0), false));
+    try testing.expectEqual(presented, try work(f));
+    try drain(f.owner, f.id);
+    _ = try f.owner.renderSession(f.id, false);
+    try drain(f.owner, f.id);
+    try testing.expectEqual(presented, try work(f));
+    const retained = try f.owner.createBuffer(8, 1, .{});
+    const commits = [_]@import("../renderer.zig").SplitSnapshot{.{ .snapshot = try f.owner.raw().getBuffer(retained), .row_columns = 8 }};
+    _ = try (try f.owner.raw().getSession(f.id)).renderSplit(null, &commits, 0, true);
+    try drain(f.owner, f.id);
+    try testing.expectEqual(presented, try work(f));
+    // A snapshot-only split invalidates the terminal, so the next scene frame encodes every row.
+    try testing.expectEqual(plainWork(8, 0, 0, 0, 2, FrameWork.full_path_screen), try presentWork(f));
+    // A resize clears more cells and skips the hit-grid compare.
+    try f.owner.resizeSessionRenderer(f.id, 8, 3);
+    var resized = plainWork(9, 3, 1, 1, 3, 0);
+    resized.cells_cleared = 48;
+    resized.hit_cells_cleared = 48;
+    resized.hit_cells_compared = 0;
+    try testing.expectEqual(resized, try presentWork(f));
+    const pixels = [_]u8{ 200, 40, 0, 255 } ** 4;
+    const picture = try f.owner.createImagePixels(&pixels, 2, 2, .{ .stride = 8 });
+    const image_node = try f.owner.sceneCreateNode(f.id, c.OT_SCENE_IMAGE, 4);
+    try f.owner.sceneSetStyle(image_node, 4, 0, 0, 1, 2, 1);
+    try f.owner.sceneSetStyle(image_node, 4, 1, 0, 1, 1, 1);
+    try f.owner.sceneMoveNode(image_node, f.root, 2);
+    // Image placements, even drawn as blocks, are a full-path reason.
+    try f.owner.sceneSetImage(image_node, picture, .fit, .blocks, null);
+    try testing.expectEqual(FrameWork.full_path_images, (try presentWork(f)).full_path_reasons);
+    // A hook frame counts its host requests.
+    try f.owner.sceneSetHooks(fill, c.OT_SCENE_HOOK_UPDATE, 1, 2, 1);
+    const done = try f.step(try f.step(null, options, c.OT_SCENE_FRAME_UPDATE, fill), options, c.OT_SCENE_FRAME_DONE, null);
+    _ = try f.owner.sceneFrameCommit(f.id, done, false);
+    try drain(f.owner, f.id);
+    try testing.expectEqual(@as(u32, 1), (try work(f)).host_requests);
+}
+
+test "Scene frame work counts viewport refresh and culling work" {
+    const f = try Fixture.init(testing.allocator, 8, 4, .{});
+    defer f.deinit();
+    const viewport = try f.owner.sceneCreateNode(f.id, 1, 2);
+    try f.owner.sceneSetStyle(viewport, 4, 0, 0, 1, 4, 1);
+    try f.owner.sceneSetStyle(viewport, 4, 1, 0, 1, 2, 1);
+    try f.owner.sceneSetStyle(viewport, 0, c.OT_STYLE_ENUM_OVERFLOW, 0, 0, c.OT_OVERFLOW_HIDDEN, 0);
+    try f.owner.sceneMoveNode(viewport, f.root, 0);
+    const content = try f.owner.sceneCreateNode(f.id, 1, 3);
+    try f.owner.sceneSetStyle(content, c.OT_STYLE_FLOAT, c.OT_STYLE_FLOAT_FLEX_SHRINK, 0, 0, 0, 0);
+    try f.owner.sceneMoveNode(content, viewport, 0);
+    try f.owner.sceneSetViewport(content, viewport);
+    var rows: [16]context.Handle = undefined;
+    for (&rows, 0..) |*row_handle, index| {
+        const row = try f.owner.sceneCreateNode(f.id, 2, @intCast(4 + index));
+        row_handle.* = row;
+        try f.owner.sceneSetText(row, &.{'a' + @as(u8, @intCast(index))});
+        try f.owner.sceneSetStyle(row, c.OT_STYLE_FLOAT, c.OT_STYLE_FLOAT_FLEX_SHRINK, 0, 0, 0, 0);
+        try f.owner.sceneSetStyle(row, 4, 0, 0, 1, 8, 1);
+        try f.owner.sceneMoveNode(row, content, @intCast(index));
+    }
+    // Every frame refreshes and overlap-tests all 16 rows, but paints and hits only the 2 visible ones,
+    // clipped to the 4-column viewport.
+    var expected: FrameWork = .{
+        .work_frame_id = 1,
+        .candidate_visits = 19,
+        .paint_visits = 19,
+        .view_preparations = 24,
+        .geometry_reads = 19,
+        .yoga_solves = 1,
+        .feedback_operations = 42,
+        .visibility_steps = 14,
+        .viewport_child_refreshes = 16,
+        .overlap_tests = 32,
+        .members_painted = 4,
+        .member_cells = 8,
+        .cells_cleared = 64,
+        .hit_cells_written = 24,
+        .hit_cells_cleared = 64,
+        .hit_cells_compared = 32,
+        .rows_diffed = 4,
+        .full_path_reasons = FrameWork.full_path_screen,
+        .layout_rounds = 1,
+    };
+    try testing.expectEqual(expected, try presentWork(f));
+    expected = .{
+        .work_frame_id = 2,
+        .candidate_visits = 19,
+        .paint_visits = 19,
+        .view_preparations = 24,
+        .feedback_operations = 21,
+        .visibility_steps = 14,
+        .viewport_child_refreshes = 16,
+        .overlap_tests = 32,
+        .members_painted = 4,
+        .member_cells = 8,
+        .cells_cleared = 64,
+        .hit_cells_written = 24,
+        .hit_cells_cleared = 64,
+        .hit_cells_compared = 32,
+        .rows_compared = 4,
+        .layout_rounds = 1,
+    };
+    try testing.expectEqual(expected, try presentWork(f));
+    try f.owner.scenePatchPaint(content, c.OT_SCENE_PROPERTY_TRANSLATE_Y, .{ .translateY = -1 });
+    expected.work_frame_id = 3;
+    expected.rows_diffed = 2;
+    try testing.expectEqual(expected, try presentWork(f));
+    // A RESIZE request from the second row defers the rest of its batch to feedback; they still count as refreshes.
+    try f.owner.sceneSetHooks(rows[1], c.OT_SCENE_HOOK_RESIZE, 1, 8, 1);
+    try f.owner.sceneSetStyle(rows[1], 4, 0, 0, 1, 6, 1);
+    const done = try f.step(try f.step(null, options, c.OT_SCENE_FRAME_RESIZE, rows[1]), options, c.OT_SCENE_FRAME_DONE, null);
+    _ = try f.owner.sceneFrameCommit(f.id, done, false);
+    try drain(f.owner, f.id);
+    const resized = try work(f);
+    try testing.expectEqual(@as(u64, 16), resized.viewport_child_refreshes);
+    try testing.expectEqual(@as(u64, 35), resized.feedback_operations);
+    try testing.expectEqual(@as(u32, 1), resized.host_requests);
 }

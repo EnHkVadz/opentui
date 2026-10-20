@@ -413,6 +413,19 @@ typedef struct ot_scene_layout {
     double screen_y;
 } ot_scene_layout;
 
+#define OT_SCENE_FULL_PATH_FORCED UINT32_C(1)
+#define OT_SCENE_FULL_PATH_SCREEN UINT32_C(2)
+#define OT_SCENE_FULL_PATH_IMAGES UINT32_C(4)
+
+/* Fields from work_frame_id on count the work of the last presented scene
+ * frame: preparation, paint, encoding, and the hit-grid commit. They are
+ * deterministic work counts, not times, and their values may change between
+ * versions as the renderer does less work. Cancelled, failed, and skipped frames,
+ * non-scene renders, and snapshot-only split renders leave them unchanged.
+ * work_frame_id is the frame_id of the counted frame, or zero before the first.
+ * full_path_reasons holds OT_SCENE_FULL_PATH_* bits: FORCED (debug flag),
+ * SCREEN (forced, invalidated, resized, or palette-changed encode), IMAGES
+ * (image placements present). */
 typedef struct ot_scene_stats {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -425,6 +438,28 @@ typedef struct ot_scene_stats {
     uint32_t average_cells_updated;
     uint32_t render_time_valid;
     uint32_t stdout_write_time_valid;
+    uint64_t work_frame_id;
+    uint64_t candidate_visits;
+    uint64_t paint_visits;
+    uint64_t view_preparations;
+    uint64_t geometry_reads;
+    uint64_t yoga_solves;
+    uint64_t feedback_operations;
+    uint64_t visibility_steps;
+    uint64_t viewport_child_refreshes;
+    uint64_t overlap_tests;
+    uint64_t members_painted;
+    uint64_t member_cells;
+    uint64_t cells_cleared;
+    uint64_t hit_cells_written;
+    uint64_t hit_cells_cleared;
+    uint64_t hit_cells_compared;
+    uint64_t rows_compared;
+    uint64_t rows_diffed;
+    uint32_t full_path_reasons;
+    uint32_t host_requests;
+    uint32_t layout_rounds;
+    uint32_t reserved;
 } ot_scene_stats;
 
 typedef struct ot_scene_cursor_state {

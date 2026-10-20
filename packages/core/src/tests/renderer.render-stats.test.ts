@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { TextRenderable } from "../renderables/Text.js"
 import { createTestRenderer, type TestRenderer } from "../testing/test-renderer.js"
-import type { NativeRenderStats } from "../zig.js"
+import type { NativeFrameWork, NativeRenderStats } from "../zig.js"
 
 function expectInitialStats(stats: NativeRenderStats): void {
   expect(stats.nativeLastFrameTime).toBe(0)
@@ -11,6 +11,7 @@ function expectInitialStats(stats: NativeRenderStats): void {
   expect(stats.averageCellsUpdated).toBe(0)
   expect(stats.nativeRenderTime).toBeUndefined()
   expect(stats.nativeStdoutWriteTime).toBeUndefined()
+  expect(Object.values(stats.frameWork).every((value) => value === 0)).toBe(true)
 }
 
 function expectRenderedStats(stats: NativeRenderStats, expectedFrameCount: number, expectedCellsUpdated: number): void {
@@ -67,6 +68,40 @@ describe("native renderer stats", () => {
     await result.renderOnce()
 
     expectRenderedStats(renderer.getNativeStats(), 3, 10)
+  })
+
+  test("frameWork counts the work of each presented scene frame", async () => {
+    const result = await createTestRenderer({ width: 4, height: 2 })
+    renderer = result.renderer
+    renderer.root.add(new TextRenderable(renderer, { content: "abc", width: 3, height: 1 }))
+    const zero = Object.fromEntries(
+      Object.keys(renderer.getNativeStats().frameWork).map((key) => [key, 0]),
+    ) as NativeFrameWork
+    const steady = {
+      ...zero,
+      viewPreparations: 2,
+      membersPainted: 1,
+      memberCells: 3,
+      cellsCleared: 16,
+      hitCellsWritten: 3,
+      hitCellsCleared: 16,
+      hitCellsCompared: 8,
+      layoutRounds: 1,
+    }
+    await result.renderOnce()
+    expect(renderer.getNativeStats().frameWork).toEqual({
+      ...steady,
+      workFrameId: 1,
+      candidateVisits: 2,
+      geometryReads: 2,
+      yogaSolves: 1,
+      rowsDiffed: 2,
+      fullPathReasons: 2,
+    })
+    // An unchanged frame reuses preparation and compares rows instead of diffing them.
+    await result.renderOnce()
+    expect(renderer.getNativeStats().frameWork).toEqual({ ...steady, workFrameId: 2, rowsCompared: 2 })
+    expect(renderer.getStats().frameWork).toEqual(renderer.getNativeStats().frameWork)
   })
 })
 

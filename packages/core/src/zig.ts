@@ -32,6 +32,7 @@ export type {
   BuildOptions,
   NativeAudioCaptureStats,
   NativeAudioStreamStats,
+  NativeFrameWork,
   NativeRenderStats,
 }
 
@@ -74,6 +75,7 @@ import type {
   AudioStats,
   BuildOptions,
   AllocatorStats,
+  NativeFrameWork,
   NativeRenderStats,
   NativeImageInfo,
 } from "./zig-structs.js"
@@ -1013,6 +1015,46 @@ const processLogLibraries: FFIRenderLib[] = []
 let globalTraceSymbols: Record<string, number[]> | null = null
 let globalFFILogPath: string | null = null
 let exitHandlerRegistered = false
+
+const nativeFrameWorkFields = {
+  workFrameId: "work_frame_id",
+  candidateVisits: "candidate_visits",
+  paintVisits: "paint_visits",
+  viewPreparations: "view_preparations",
+  geometryReads: "geometry_reads",
+  yogaSolves: "yoga_solves",
+  feedbackOperations: "feedback_operations",
+  visibilitySteps: "visibility_steps",
+  viewportChildRefreshes: "viewport_child_refreshes",
+  overlapTests: "overlap_tests",
+  membersPainted: "members_painted",
+  memberCells: "member_cells",
+  cellsCleared: "cells_cleared",
+  hitCellsWritten: "hit_cells_written",
+  hitCellsCleared: "hit_cells_cleared",
+  hitCellsCompared: "hit_cells_compared",
+  rowsCompared: "rows_compared",
+  rowsDiffed: "rows_diffed",
+  fullPathReasons: "full_path_reasons",
+  hostRequests: "host_requests",
+  layoutRounds: "layout_rounds",
+} as const satisfies Record<keyof NativeFrameWork, keyof (typeof nativeLayouts)["ot_scene_stats"]["fields"]>
+
+function readFrameWork(
+  layout: (typeof nativeLayouts)["ot_scene_stats"],
+  output: BigUint64Array,
+  words: Uint32Array,
+): NativeFrameWork {
+  const result = {} as NativeFrameWork
+  for (const [name, field] of Object.entries(nativeFrameWorkFields) as [
+    keyof NativeFrameWork,
+    keyof typeof layout.fields,
+  ][]) {
+    const { offset, type } = layout.fields[field]
+    result[name] = type === "u64" ? toNumber(output[offset / 8]) : words[offset / 4]
+  }
+  return result
+}
 
 function toNumber(value: number | bigint): number {
   return typeof value === "bigint" ? Number(value) : value
@@ -7813,6 +7855,7 @@ export class FFIRenderLib {
         words[layout.fields.stdout_write_time_valid.offset / 4] !== 0
           ? times[layout.fields.stdout_write_time.offset / 8]
           : undefined,
+      frameWork: readFrameWork(layout, output, words),
     }
   }
 
