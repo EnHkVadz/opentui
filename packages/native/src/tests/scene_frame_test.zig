@@ -460,6 +460,8 @@ test "Scene frame full-frame debug flag disables work reuse between frames only"
         try testing.expectEqual(visits, reused.candidate_visits);
         try testing.expectEqual(@as(u32, 0), reused.full_path_reasons);
     }
+    try f.owner.cancelSession(f.id);
+    try testing.expectError(error.SessionCancelled, f.owner.sceneSetDebugFlags(f.id, c.OT_SCENE_DEBUG_FULL_FRAME));
 }
 
 test "Scene frame work counts viewport refresh and culling work" {
