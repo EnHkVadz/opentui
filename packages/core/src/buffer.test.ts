@@ -3,6 +3,11 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test"
 import { OptimizedBuffer, type BufferAccess } from "./buffer.js"
 import { RGBA } from "./lib/RGBA.js"
 import { NativeImage } from "./image.js"
+import { TextBuffer } from "./text-buffer.js"
+import { TextBufferView } from "./text-buffer-view.js"
+import { EditBuffer } from "./edit-buffer.js"
+import { EditorView } from "./editor-view.js"
+import { createTestRenderer } from "./testing/test-renderer.js"
 
 let resourceContext: ResourceContext
 beforeEach(() => {
@@ -225,6 +230,69 @@ describe("OptimizedBuffer", () => {
       expect(draws.map(([draw]) => failure(draw))).toEqual(draws.map(([, message]) => `RangeError: ${message}`))
     } finally {
       image.dispose()
+    }
+  })
+
+  it("accepts -0 like 0 in integer arguments on every runtime", async () => {
+    const white = RGBA.fromInts(255, 255, 255)
+    const { renderer } = await createTestRenderer({ width: 8, height: 2 })
+    const textBuffer = TextBuffer.create("unicode", resourceContext)
+    const textView = TextBufferView.create(textBuffer)
+    const editBuffer = EditBuffer.create("unicode", resourceContext)
+    const editorView = EditorView.create(editBuffer, 8, 2)
+    const glyph = buffer.encodeUnicode("a")
+    textBuffer.setText("hello\nworld")
+    editBuffer.setText("hello\nworld")
+    const draw = (paint: () => void) => (buffer.clear(), paint(), buffer.getSpanLines())
+    const highlight = { start: 0, end: 1, styleId: 1 }
+    const calls: Record<string, (z: number) => unknown> = {
+      pushScissorRect: (z) =>
+        draw(() => (buffer.pushScissorRect(z, z, 2, 2), buffer.fillRect(0, 0, 20, 5, white), buffer.popScissorRect())),
+      drawPackedBuffer: (z) => draw(() => buffer.drawPackedBuffer(new Uint8Array(48), 48, z, z, 1, 1)),
+      drawSuperSampleBuffer: (z) =>
+        draw(() => buffer.drawSuperSampleBuffer(z, z, new Uint8Array(16).fill(255), 16, "rgba8unorm", 8)),
+      drawGrayscaleBuffer: (z) => draw(() => buffer.drawGrayscaleBuffer(z, z, Float32Array.of(1), 1, 1)),
+      drawGrayscaleBufferSupersampled: (z) =>
+        draw(() => buffer.drawGrayscaleBufferSupersampled(z, z, new Float32Array(4).fill(1), 2, 2)),
+      drawChar: (z) => draw(() => buffer.drawChar(glyph.data[0]!.char, z, z, white, white, z)),
+      drawTextBuffer: (z) => draw(() => buffer.drawTextBuffer(textView, z, z)),
+      drawEditorView: (z) => draw(() => buffer.drawEditorView(editorView, z, z)),
+      "TextBuffer highlights": (z) => (
+        textBuffer.clearLineHighlights(z), textBuffer.addHighlight(z, highlight), textBuffer.getLineHighlights(z)
+      ),
+      "TextBuffer.getTextRange": (z) => textBuffer.getTextRange(z, 3),
+      "TextBufferView.setFirstLineOffset": (z) => textView.setFirstLineOffset(z),
+      "TextBufferView.getLineSources": (z) => textView.getLineSources(z, 2),
+      "TextBufferView.measureForDimensions": (z) => textView.measureForDimensions(z, 2),
+      "EditBuffer cursor": (z) => (
+        editBuffer.setCursor(z, z),
+        editBuffer.setCursorToLineCol(z, z),
+        editBuffer.setCursorByOffset(z),
+        editBuffer.gotoLine(z),
+        editBuffer.deleteRange(z, z, z, z),
+        editBuffer.getCursorPosition()
+      ),
+      "EditBuffer offsets": (z) => [
+        editBuffer.offsetToPosition(z),
+        editBuffer.positionToOffset(z, z),
+        editBuffer.getLineStartOffset(z),
+        editBuffer.getTextRange(z, 3),
+        editBuffer.getTextRangeByCoords(z, z, z, 3),
+        editBuffer.clearLineHighlights(z),
+      ],
+      "EditorView.setCursorByOffset": (z) => (editorView.setCursorByOffset(z), editBuffer.getCursorPosition()),
+      renderer: (z) => [renderer.hitTest(z, z), renderer.getLinkAt(z, z), renderer.getLinkIdAt(z, z)],
+    }
+    try {
+      const results = (z: number) => Object.entries(calls).map(([name, call]) => [name, call(z)])
+      expect(results(-0)).toEqual(results(0))
+    } finally {
+      buffer.freeUnicode(glyph)
+      editorView.destroy()
+      editBuffer.destroy()
+      textView.destroy()
+      textBuffer.destroy()
+      renderer.destroy()
     }
   })
 
